@@ -1,0 +1,9 @@
+.session-gate {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  color: var(--ink-muted);
+  font-size: 15px;
+}

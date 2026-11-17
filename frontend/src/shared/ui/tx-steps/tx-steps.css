@@ -1,0 +1,88 @@
+.sp-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sp-step {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.sp-step__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sp-step__dot {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.sp-step__line {
+  width: 2px;
+  flex: 1;
+  min-height: 22px;
+  background: var(--line-strong);
+  opacity: 0.5;
+}
+
+.sp-step--done .sp-step__dot {
+  background: var(--positive-fill);
+  color: #ffffff;
+}
+
+.sp-step--done .sp-step__line {
+  background: var(--positive-fill);
+  opacity: 1;
+}
+
+.sp-step--active .sp-step__dot {
+  border: 2px solid var(--accent);
+}
+
+.sp-step--active .sp-step__dot::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
+
+.sp-step--todo .sp-step__dot {
+  border: 2px solid var(--line-strong);
+}
+
+.sp-step__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0 var(--space-3);
+}
+
+.sp-step__label {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.sp-step--active .sp-step__label {
+  font-weight: 600;
+}
+
+.sp-step--todo .sp-step__label {
+  color: var(--ink-muted);
+}
+
+.sp-step__hint {
+  font-size: 13px;
+  color: var(--ink-muted);
+}

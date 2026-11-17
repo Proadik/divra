@@ -1,0 +1,139 @@
+.group-page {
+  min-height: 100dvh;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-5) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  color: var(--ink);
+}
+
+.group-page--state {
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-muted);
+}
+
+.group-page__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.group-page__heading {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+
+.group-page__title {
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.group-page__subtitle {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-muted);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .group-page__subtitle:hover {
+    background: var(--surface-hover);
+    color: var(--accent);
+  }
+}
+
+.group-page__subtitle:active {
+  background: var(--surface-active);
+}
+
+.group-page__subtitle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.group-page__menu {
+  inset: auto;
+  top: 76px;
+  right: max(var(--space-5), calc((100vw - 440px) / 2 + var(--space-5)));
+  margin: 0;
+  padding: var(--space-3);
+  border: none;
+  border-radius: var(--radius-xl);
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: var(--shadow-fab);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.group-page__menu:popover-open {
+  display: flex;
+}
+
+.group-page__share {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
+.group-page__share--back {
+  color: var(--accent);
+}
+
+.group-page__share--owe {
+  color: var(--owe);
+}
+
+/*
+ * Кнопка «Добавить расход».
+ * position: sticky внутри потока: пока контента больше экрана — прилипает к низу,
+ * а когда пользователь доскроллил до конца — стоит на своём месте над нижним отступом.
+ * margin-top: auto прижимает её вниз, если контента мало.
+ */
+.group-page__fab {
+  position: sticky;
+  bottom: var(--space-6);
+  margin-top: auto;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.group-page__fab > * {
+  pointer-events: auto;
+}
+
+.group-page__amounts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.group-page__amounts-note {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+.group-page__empty {
+  padding: var(--space-4) 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink-muted);
+}

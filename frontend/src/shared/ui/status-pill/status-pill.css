@@ -1,0 +1,53 @@
+.sp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 var(--space-3) 0 10px;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--surface-raised);
+  color: var(--ink);
+}
+
+.sp-pill__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--ink-muted);
+}
+
+.sp-pill--live {
+  color: var(--positive);
+  background: transparent;
+  padding-left: 0;
+}
+
+.sp-pill--live .sp-pill__dot,
+.sp-pill--finalized .sp-pill__dot,
+.sp-pill--confirmed .sp-pill__dot {
+  background: var(--positive-fill);
+}
+
+.sp-pill--pending {
+  background: var(--owe-soft);
+  color: var(--owe);
+}
+
+.sp-pill--pending .sp-pill__dot {
+  background: var(--owe);
+}
+
+.sp-pill--confirmed,
+.sp-pill--finalized {
+  color: var(--positive);
+}
+
+.sp-pill--failed {
+  color: var(--danger);
+}
+
+.sp-pill--failed .sp-pill__dot {
+  background: var(--danger);
+}

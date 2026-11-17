@@ -17,7 +17,7 @@ export const ErrorPage = (): ReactElement => {
   const error = useRouteError()
 
   return (
-    <main>
+    <main className="page-enter">
       <h1>Что-то пошло не так</h1>
       <p>{getErrorMessage(error)}</p>
       <button type="button" onClick={() => window.location.reload()}>

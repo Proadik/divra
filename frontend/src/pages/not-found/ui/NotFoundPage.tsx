@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 
 export const NotFoundPage = (): ReactElement => {
   return (
-    <main>
+    <main className="page-enter">
       <h1>404</h1>
       <p>Страница не найдена</p>
       <Link to="/">На главную</Link>

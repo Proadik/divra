@@ -1,0 +1,6 @@
+.sp-qr {
+  display: block;
+  /* QR читается только тёмным по светлому — не зависит от темы */
+  color: #111318;
+  background: #ffffff;
+}

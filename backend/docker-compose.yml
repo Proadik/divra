@@ -1,0 +1,16 @@
+# Локальный PostgreSQL для разработки: docker compose up -d
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-divra}
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - divra-pg:/var/lib/postgresql/data
+volumes:
+  divra-pg:
+    name: ${POSTGRES_VOLUME_NAME:-${COMPOSE_PROJECT_NAME}_divra-pg}
+    external: ${POSTGRES_VOLUME_EXTERNAL:-false}

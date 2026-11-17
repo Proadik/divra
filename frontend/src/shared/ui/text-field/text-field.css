@@ -1,0 +1,57 @@
+.sp-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 56px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sp-field:last-child {
+  border-bottom: none;
+}
+
+.sp-field__label {
+  font-size: 14px;
+  color: var(--ink-muted);
+  width: 84px;
+  flex: none;
+}
+
+.sp-field__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink);
+  padding: var(--space-2) 0;
+  border-radius: 6px;
+}
+
+.sp-field__input::placeholder {
+  color: var(--ink-muted);
+}
+
+.sp-field__input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.sp-field {
+  cursor: text;
+}
+
+.sp-field__label {
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+/* Фокус в поле подсвечивает и подпись — видно, какая строка активна */
+.sp-field:focus-within .sp-field__label {
+  color: var(--accent);
+}
+
+.sp-field__input:disabled {
+  cursor: not-allowed;
+  color: var(--ink-muted);
+}

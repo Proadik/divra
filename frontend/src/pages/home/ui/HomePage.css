@@ -1,0 +1,196 @@
+.home {
+  min-height: 100dvh;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-5) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  color: var(--ink);
+}
+
+.home--state {
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-muted);
+}
+
+.home__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--size-touch);
+}
+
+.home__brand {
+  display: inline-flex;
+  color: var(--ink);
+}
+
+.home__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Итого: «Тебе должны» / «Ты должен» вместо кнопок карточки баланса */
+.home__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: rgb(255 255 255 / 0.06);
+}
+
+.home__stat-label {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--on-inverse-muted);
+}
+
+.home__stat-value {
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.home__stat-value--back {
+  color: #8fa6ff;
+}
+
+.home__stat-value--owe {
+  color: #ffb48a;
+}
+
+.home__new {
+  min-height: 32px;
+  padding-block: 0;
+}
+
+.home__empty {
+  padding: var(--space-4) 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink-muted);
+}
+
+.home__tile {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.home__tile--trip {
+  background: var(--avatar-1);
+}
+
+.home__tile--home {
+  background: var(--avatar-2);
+}
+
+.home__tile--food {
+  background: var(--avatar-3);
+}
+
+.home__tile--other {
+  background: var(--avatar-4);
+}
+
+.home__note {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-muted);
+}
+
+.home__note--settled {
+  color: var(--positive);
+}
+
+.home__onchain {
+  color: var(--positive);
+}
+
+/* Модалки */
+.home__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.home__field {
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: 0 var(--space-4);
+}
+
+.home__error {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--owe);
+}
+
+.home__pick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  list-style: none;
+}
+
+.home__pick-item {
+  width: 100%;
+  min-height: 60px;
+  padding: var(--space-2);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+  color: var(--ink);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .home__pick-item:hover {
+    background: var(--surface-hover);
+  }
+}
+
+.home__pick-item:active {
+  background: var(--surface-active);
+}
+
+.home__pick-item:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Как на странице группы: sticky внизу, в конце страницы встаёт на место */
+.home__fab {
+  position: sticky;
+  bottom: var(--space-6);
+  margin-top: auto;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.home__fab > * {
+  pointer-events: auto;
+}
+
+/* Итог: цифры одной ширины, чтобы счётчик не дёргал строку */
+.home .sp-balance__value {
+  font-variant-numeric: tabular-nums;
+}

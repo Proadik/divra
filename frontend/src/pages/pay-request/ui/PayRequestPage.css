@@ -1,0 +1,155 @@
+.pay {
+  min-height: 100dvh;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  color: var(--ink);
+}
+
+.pay__header {
+  display: flex;
+  justify-content: center;
+  color: var(--ink);
+}
+
+.pay__state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  text-align: center;
+}
+
+.pay__title {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.pay__muted {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-muted);
+}
+
+.pay__lead {
+  font-size: 15px;
+}
+
+.pay__center {
+  text-align: center;
+}
+
+.pay__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 20px;
+  border-radius: var(--radius-2xl);
+  background: var(--surface-raised);
+  text-align: center;
+}
+
+.pay__big {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 44px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -1.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pay__cur {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink-muted);
+}
+
+.pay__message {
+  align-self: stretch;
+  margin-top: 4px;
+  padding: 10px 14px;
+  border-radius: 16px 16px 16px 4px;
+  background: var(--surface);
+  font-size: 14px;
+  line-height: 19px;
+  text-align: left;
+}
+
+.pay__actions {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.pay__actions .sp-btn {
+  text-decoration: none;
+}
+
+.pay__phone {
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+}
+
+.pay__phone summary {
+  min-height: 44px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent);
+  cursor: pointer;
+  list-style: none;
+}
+
+.pay__phone summary::-webkit-details-marker {
+  display: none;
+}
+
+.pay__phone summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-lg);
+}
+
+.pay__qr {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 18px;
+}
+
+.pay__paid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 24px 20px;
+  border-radius: var(--radius-2xl);
+  background: var(--surface-raised);
+  text-align: center;
+}
+
+.pay__paid-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  background: var(--positive-fill);
+  color: var(--on-accent);
+}
+
+.pay__error {
+  color: var(--danger);
+}

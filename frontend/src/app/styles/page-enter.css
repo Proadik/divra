@@ -1,0 +1,58 @@
+@keyframes page-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@keyframes page-action-rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .page-enter
+    > :not(dialog, [role='alert'], [role='status'], [aria-busy='true'], .page-enter-action) {
+    animation: page-rise 320ms var(--ease-out) var(--page-enter-delay, 140ms) backwards;
+  }
+
+  .page-enter > :nth-child(1 of :not([role='alert'], [role='status'])) {
+    --page-enter-delay: 0ms;
+  }
+
+  .page-enter > :nth-child(2 of :not([role='alert'], [role='status'])) {
+    --page-enter-delay: 40ms;
+  }
+
+  .page-enter > :nth-child(3 of :not([role='alert'], [role='status'])) {
+    --page-enter-delay: 90ms;
+  }
+
+  .page-enter .sp-listgroup:not(dialog *) > :not([role='alert'], [role='status']) {
+    animation: page-rise 280ms var(--ease-out) backwards;
+    animation-delay: calc(var(--page-enter-delay, 140ms) + 50ms + var(--page-row-delay, 0ms));
+  }
+
+  .page-enter .sp-listgroup > :nth-child(2) {
+    --page-row-delay: 25ms;
+  }
+
+  .page-enter .sp-listgroup > :nth-child(3) {
+    --page-row-delay: 50ms;
+  }
+
+  .page-enter .sp-listgroup > :nth-child(4) {
+    --page-row-delay: 75ms;
+  }
+
+  .page-enter .sp-listgroup > :nth-child(n + 5) {
+    --page-row-delay: 100ms;
+  }
+
+  /* Двигаем кнопку, чтобы sticky-контейнер оставался на месте. */
+  .page-enter-action > button {
+    animation: page-action-rise 340ms var(--ease-out) 230ms backwards;
+  }
+}

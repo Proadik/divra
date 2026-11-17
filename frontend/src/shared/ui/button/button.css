@@ -1,0 +1,184 @@
+.sp-btn {
+  font: inherit;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  padding: 0 var(--space-5);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sp-btn--md {
+  height: var(--size-control);
+  font-size: 15px;
+}
+
+.sp-btn--lg {
+  height: var(--size-cta);
+  font-size: 16px;
+}
+
+.sp-btn--block {
+  width: 100%;
+}
+
+.sp-btn--primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.sp-btn--secondary {
+  background: var(--surface-raised);
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.sp-btn--inverse {
+  background: transparent;
+  color: var(--on-inverse);
+  border-color: var(--line-inverse);
+}
+
+.sp-btn--ghost {
+  background: transparent;
+  color: var(--accent);
+  padding: 0 var(--space-3);
+}
+
+.sp-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sp-iconbtn {
+  width: var(--size-touch);
+  height: var(--size-touch);
+  border-radius: var(--radius-full);
+  border: none;
+  background: var(--surface-raised);
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+}
+
+.sp-iconbtn--sunken {
+  background: var(--surface-sunken);
+}
+
+.sp-fab {
+  height: var(--size-cta);
+  padding: 0 var(--space-6) 0 var(--space-5);
+  border-radius: var(--radius-full);
+  border: none;
+  background: var(--surface-inverse);
+  color: var(--on-inverse);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: var(--shadow-fab);
+  cursor: pointer;
+}
+
+.sp-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.sp-iconbtn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.sp-fab:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/*
+ * Состояния. hover — только на устройствах с мышью (на тач-экранах он «залипает»),
+ * active — нажатие, focus-visible — фокус с клавиатуры. Отключённые кнопки не реагируют.
+ */
+.sp-btn,
+.sp-iconbtn,
+.sp-fab {
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .sp-btn--primary:not(:disabled):hover {
+    background: var(--accent-hover);
+  }
+
+  .sp-btn--secondary:not(:disabled):hover {
+    background: var(--surface-hover);
+    border-color: var(--ink-muted);
+  }
+
+  .sp-btn--inverse:not(:disabled):hover {
+    background: var(--inverse-hover);
+    border-color: var(--on-inverse-muted);
+  }
+
+  .sp-btn--ghost:not(:disabled):hover {
+    background: var(--accent-soft);
+  }
+
+  .sp-iconbtn:not(:disabled):hover {
+    background: var(--surface-hover);
+  }
+
+  .sp-iconbtn--sunken:not(:disabled):hover {
+    background: var(--sunken-hover);
+  }
+
+  .sp-fab:not(:disabled):hover {
+    background: var(--inverse-hover);
+  }
+}
+
+.sp-btn:not(:disabled):active,
+.sp-fab:not(:disabled):active {
+  transform: scale(var(--press-scale));
+}
+
+.sp-iconbtn:not(:disabled):active {
+  transform: scale(0.92);
+  background: var(--surface-active);
+}
+
+.sp-btn--primary:not(:disabled):active {
+  background: var(--accent-active);
+}
+
+.sp-btn--secondary:not(:disabled):active {
+  background: var(--surface-active);
+}
+
+.sp-btn--inverse:not(:disabled):active,
+.sp-fab:not(:disabled):active {
+  background: var(--inverse-active);
+}
+
+.sp-btn--ghost:not(:disabled):active {
+  background: var(--accent-soft-hover);
+}
+
+.sp-iconbtn:disabled,
+.sp-fab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

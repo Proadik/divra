@@ -1,0 +1,19 @@
+.sp-explorer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+  border-radius: 6px;
+}
+
+.sp-explorer:hover {
+  text-decoration: underline;
+}
+
+.sp-explorer:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

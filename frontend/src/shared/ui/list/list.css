@@ -1,0 +1,141 @@
+.sp-listgroup-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sp-listgroup__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sp-listgroup__title {
+  margin: 0;
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.sp-listgroup__aside {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.sp-listgroup {
+  background: var(--surface-raised);
+  border-radius: var(--radius-xl);
+  padding: var(--space-1) var(--space-4);
+  display: flex;
+  flex-direction: column;
+}
+
+.sp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--size-row);
+  padding: 10px 0;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--line);
+}
+
+.sp-row:last-child {
+  border-bottom: none;
+}
+
+.sp-row__tile {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.sp-row__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sp-row__title {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-row__sub {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-muted);
+}
+
+.sp-row__trail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sp-row--action {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sp-row--action:last-child {
+  border-bottom: none;
+}
+
+.sp-row--action:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/*
+ * Строка-кнопка. Подсветка выходит за края строки на 12px через box-shadow —
+ * так она почти заполняет карточку, а разделители между строками не сдвигаются.
+ */
+.sp-row--action {
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .sp-row--action:not(:disabled):hover {
+    background: var(--surface-hover);
+    box-shadow:
+      -12px 0 0 var(--surface-hover),
+      12px 0 0 var(--surface-hover);
+  }
+}
+
+.sp-row--action:not(:disabled):active {
+  background: var(--surface-active);
+  box-shadow:
+    -12px 0 0 var(--surface-active),
+    12px 0 0 var(--surface-active);
+}
+
+.sp-row--action:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

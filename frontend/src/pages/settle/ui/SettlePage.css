@@ -1,0 +1,359 @@
+.settle {
+  min-height: 100dvh;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-5) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  color: var(--ink);
+}
+
+.settle__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.settle__titles {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.settle__title {
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.settle__subtitle,
+.settle__muted {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-muted);
+}
+
+.settle__spacer {
+  width: var(--size-touch);
+}
+
+.settle__state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  text-align: center;
+}
+
+/* Итог долга — тёмная карточка, как баланс в группе */
+.settle__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 20px;
+  border-radius: var(--radius-2xl);
+  background: var(--surface-inverse);
+  color: var(--on-inverse);
+}
+
+.settle__summary-label,
+.settle__summary-hint {
+  font-size: 14px;
+  line-height: 18px;
+  color: var(--on-inverse-muted);
+}
+
+.settle__summary-hint {
+  font-size: 13px;
+}
+
+.settle__summary-value,
+.settle__big {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 36px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+}
+
+.settle__big {
+  font-size: 44px;
+  letter-spacing: -1.5px;
+}
+
+.settle__summary-cur {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink-muted);
+}
+
+.settle__summary .settle__summary-cur {
+  color: var(--on-inverse-muted);
+}
+
+.settle__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.settle__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.settle__heading h2 {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.settle__heading span {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.settle__row {
+  min-height: 64px;
+}
+
+.settle__row .sp-row__sub {
+  white-space: nowrap;
+}
+
+.settle__row--off .sp-row__title {
+  color: var(--ink-muted);
+}
+
+.settle__warn {
+  color: var(--owe);
+}
+
+.settle__link {
+  flex: none;
+  min-height: 36px;
+  padding-block: 0;
+}
+
+/* Сумма перевода: компактное поле справа */
+.settle__amount {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: text;
+  transition: box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.settle__amount input {
+  width: auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 15px;
+  line-height: 36px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  field-sizing: content;
+}
+
+.settle__amount input:focus {
+  outline: none;
+}
+
+.settle__amount input:disabled {
+  color: var(--ink-muted);
+}
+
+.settle__amount span {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+
+.settle__amount:focus-within {
+  box-shadow: 0 0 0 2px var(--focus);
+}
+
+.settle__amount--bad {
+  box-shadow: 0 0 0 2px var(--owe);
+}
+
+.settle__wallet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-block: var(--space-3);
+}
+
+.settle__wallet-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.settle__wallet-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 10px;
+  background: var(--surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settle__wallet-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settle__wallet-balance {
+  font-weight: 500;
+  color: var(--positive);
+  font-variant-numeric: tabular-nums;
+}
+
+.settle__hint {
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--ink-muted);
+}
+
+.settle__hint--center {
+  text-align: center;
+}
+
+.settle__footer {
+  position: sticky;
+  bottom: var(--space-5);
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.settle__error {
+  padding: 10px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--owe-soft);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--owe);
+}
+
+.settle__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 24px 20px;
+  border-radius: var(--radius-2xl);
+  background: var(--surface-raised);
+}
+
+.settle__card--steps {
+  align-items: stretch;
+  padding-bottom: var(--space-2);
+}
+
+.settle__avatars {
+  display: flex;
+}
+
+.settle__avatars > * + * {
+  margin-left: -10px;
+  box-shadow: 0 0 0 3px var(--surface-raised);
+}
+
+.settle__done {
+  margin-top: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.settle__done-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--avatar-3);
+  color: var(--positive);
+  animation: settle-pop 520ms var(--ease-out) both;
+}
+
+@keyframes settle-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+.settle__done-title {
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 700;
+}
+
+.settle__done-sub {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--positive);
+}
+
+.settle__received {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.settle__ok {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--positive);
+}
+
+.settle__tx {
+  color: inherit;
+  text-decoration: none;
+}
+
+.settle__tx-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+}

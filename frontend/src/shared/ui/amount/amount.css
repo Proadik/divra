@@ -1,0 +1,71 @@
+.sp-amount {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.sp-amount__value {
+  font-weight: 600;
+}
+
+.sp-amount__cur {
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
+.sp-amount--sm .sp-amount__value {
+  font-size: 15px;
+}
+
+.sp-amount--sm {
+  gap: 4px;
+}
+
+.sp-amount--sm .sp-amount__cur {
+  font-size: 13px;
+}
+
+.sp-amount--md .sp-amount__value {
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.sp-amount--md .sp-amount__cur {
+  font-size: 14px;
+}
+
+.sp-amount--lg .sp-amount__value {
+  font-size: 48px;
+  line-height: 48px;
+  font-weight: 700;
+  letter-spacing: -1.5px;
+}
+
+.sp-amount--lg .sp-amount__cur {
+  font-size: 16px;
+}
+
+.sp-amount--xl .sp-amount__value {
+  font-size: 56px;
+  line-height: 56px;
+  font-weight: 700;
+  letter-spacing: -2px;
+}
+
+.sp-amount--xl .sp-amount__cur {
+  font-size: 18px;
+}
+
+.sp-tone--accent .sp-amount__value {
+  color: var(--accent);
+}
+
+.sp-tone--owe .sp-amount__value {
+  color: var(--owe);
+}
+
+.sp-tone--ink .sp-amount__value {
+  color: var(--ink);
+}

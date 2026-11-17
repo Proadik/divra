@@ -1,0 +1,30 @@
+# Divra — монорепозиторий: frontend/ и backend/ (у каждого ещё свой .gitignore)
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Демо-видео
+divra-demo*.mp4
+
+# Резервная копия истории frontend до объединения репозиториев
+.frontend-git-backup/
+
+# Зависимости и сборка
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Секреты и локальные настройки
+.env
+.env.*
+!.env.example
+
+# ОС
+.DS_Store
+Thumbs.db
+
+# Логи
+*.log

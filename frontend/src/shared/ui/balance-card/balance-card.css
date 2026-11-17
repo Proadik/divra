@@ -1,0 +1,51 @@
+.sp-balance {
+  background: var(--surface-inverse);
+  color: var(--on-inverse);
+  border-radius: var(--radius-2xl);
+  padding: 22px var(--space-5) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.sp-balance__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sp-balance__label {
+  font-size: 14px;
+  color: var(--on-inverse-muted);
+}
+
+.sp-balance__amount {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.sp-balance__value {
+  font-size: 36px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -1px;
+}
+
+.sp-balance__cur {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--on-inverse-muted);
+}
+
+.sp-balance__caption {
+  font-size: 14px;
+  color: var(--on-inverse-muted);
+  margin-top: calc(var(--space-2) * -1);
+}
+
+.sp-balance__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}

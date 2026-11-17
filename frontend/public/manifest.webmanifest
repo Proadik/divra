@@ -1,10 +1,33 @@
 {
-  "name": "",
-  "short_name": "",
-  "description": "",
+  "name": "Divra — общие расходы",
+  "short_name": "Divra",
+  "description": "Делите расходы с друзьями и закрывайте долги в USDC одной транзакцией.",
+  "lang": "ru",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "",
-  "theme_color": "",
-  "icons": []
+  "background_color": "#F3F4F6",
+  "theme_color": "#2446E0",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
 }
