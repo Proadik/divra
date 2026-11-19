@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   HttpCode,
@@ -14,6 +15,7 @@ import { CurrentUser, Public } from '@nestjs/authentication';
 import { Throttle, minutes } from '@nestjs/throttler';
 import { z } from 'zod';
 import {
+  type ActiveInviteView,
   type InvitePreview,
   type InviteView,
   InvitesService,
@@ -42,6 +44,27 @@ export class GroupInvitesController {
     body: z.infer<typeof createInviteSchema>,
   ): Promise<InviteView> {
     return this.invites.create(groupId, userId, body.claimMemberId ?? null);
+  }
+
+  /** Действующие ссылки группы: их можно отозвать */
+  @Get()
+  list(
+    @CurrentUser('id') userId: string,
+    @Param('groupId', groupIdPipe) groupId: string,
+  ): Promise<ActiveInviteView[]> {
+    return this.invites.listActive(groupId, userId);
+  }
+
+  /** Отозвать ссылку до срока: превью и вход по ней ответят 410 */
+  @Delete(':code')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ default: { limit: 30, ttl: minutes(1) } })
+  revoke(
+    @CurrentUser('id') userId: string,
+    @Param('groupId', groupIdPipe) groupId: string,
+    @Param('code') code: string,
+  ): Promise<void> {
+    return this.invites.revoke(groupId, code, userId);
   }
 }
 

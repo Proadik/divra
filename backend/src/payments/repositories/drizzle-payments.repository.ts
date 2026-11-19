@@ -14,6 +14,8 @@ import {
   sql,
 } from 'drizzle-orm';
 import type { Database } from '../../database/database.module.js';
+import { debtsOf, netDebts } from '../../groups/ledger.js';
+import { loadDebtTotals } from '../../groups/repositories/drizzle-expenses.repository.js';
 import {
   groupMembers,
   groups,
@@ -23,11 +25,14 @@ import {
 import { rethrowUniqueViolation } from '../../database/unique-violation.js';
 import { UniqueViolationError } from '../../common/errors/unique-violation.error.js';
 import {
+  type CancelRequestResult,
   type NewPaymentRequest,
   type PaymentRequestDetails,
   type PaymentRequestRecord,
   PaymentsRepository,
+  type RecordCashResult,
   type RecordPaymentResult,
+  type RemindResult,
 } from './payments.repository.js';
 
 const requestColumns = {
@@ -47,7 +52,15 @@ const requestColumns = {
   lastCheckedAt: paymentRequests.lastCheckedAt,
   paidAt: paymentRequests.paidAt,
   replacedAt: paymentRequests.replacedAt,
+  cancelledAt: paymentRequests.cancelledAt,
+  lastRemindedAt: paymentRequests.lastRemindedAt,
 };
+
+/** Действующий (не оплачен, не заменён и не отменён) запрос */
+const isActive = and(
+  isNull(paymentRequests.paidAt),
+  isNull(paymentRequests.replacedAt),
+);
 
 @Injectable()
 export class DrizzlePaymentsRepository extends PaymentsRepository {
@@ -235,5 +248,190 @@ export class DrizzlePaymentsRepository extends PaymentsRepository {
       }
       throw error;
     }
+  }
+
+  async cancelRequest(
+    groupId: string,
+    requesterMemberId: string,
+    code: string,
+    at: Date,
+  ): Promise<CancelRequestResult> {
+    const cancelled = await this.db
+      .update(paymentRequests)
+      .set({ replacedAt: at, cancelledAt: at })
+      .where(
+        and(
+          eq(paymentRequests.groupId, groupId),
+          eq(paymentRequests.requesterMemberId, requesterMemberId),
+          eq(paymentRequests.code, code),
+          isActive,
+        ),
+      )
+      .returning({ id: paymentRequests.id });
+    if (cancelled.length > 0) {
+      return 'cancelled';
+    }
+    const [existing] = await this.db
+      .select({ paidAt: paymentRequests.paidAt })
+      .from(paymentRequests)
+      .where(
+        and(
+          eq(paymentRequests.groupId, groupId),
+          eq(paymentRequests.requesterMemberId, requesterMemberId),
+          eq(paymentRequests.code, code),
+        ),
+      );
+    return existing?.paidAt ? 'paid' : 'not-found';
+  }
+
+  async markReminded(
+    groupId: string,
+    requesterMemberId: string,
+    code: string,
+    at: Date,
+    minIntervalMs: number,
+  ): Promise<RemindResult> {
+    const threshold = new Date(at.getTime() - minIntervalMs);
+    const own = and(
+      eq(paymentRequests.groupId, groupId),
+      eq(paymentRequests.requesterMemberId, requesterMemberId),
+      eq(paymentRequests.code, code),
+    );
+    const updated = await this.db
+      .update(paymentRequests)
+      .set({ lastRemindedAt: at })
+      .where(
+        and(
+          own,
+          isActive,
+          gt(paymentRequests.expiresAt, at),
+          or(
+            isNull(paymentRequests.lastRemindedAt),
+            sql`${paymentRequests.lastRemindedAt} <= ${threshold}`,
+          ),
+        ),
+      )
+      .returning({ id: paymentRequests.id });
+    const [request] = await this.details().where(own);
+    if (!request) {
+      return { ok: false, reason: 'not-found' };
+    }
+    if (updated.length > 0) {
+      return { ok: true, request };
+    }
+    if (
+      request.paidAt ||
+      request.replacedAt ||
+      request.expiresAt <= at ||
+      !request.lastRemindedAt
+    ) {
+      return { ok: false, reason: 'not-open' };
+    }
+    return {
+      ok: false,
+      reason: 'too-soon',
+      nextAt: new Date(request.lastRemindedAt.getTime() + minIntervalMs),
+    };
+  }
+
+  async recordCash(input: {
+    groupId: string;
+    userId: string;
+    debtorMemberId: string;
+    amountCents: number;
+    at: Date;
+  }): Promise<RecordCashResult> {
+    return this.db.transaction(async (tx) => {
+      // Блокировка группы: долг не изменится, пока проверяем и записываем
+      const [me] = await tx
+        .select({ id: groupMembers.id })
+        .from(groups)
+        .innerJoin(
+          groupMembers,
+          and(
+            eq(groupMembers.groupId, groups.id),
+            eq(groupMembers.userId, input.userId),
+          ),
+        )
+        .where(eq(groups.id, input.groupId))
+        .for('update', { of: groups });
+      if (!me) {
+        return { ok: false, reason: 'not-member' } as const;
+      }
+      const [debtor] = await tx
+        .select({ id: groupMembers.id })
+        .from(groupMembers)
+        .where(
+          and(
+            eq(groupMembers.groupId, input.groupId),
+            eq(groupMembers.id, input.debtorMemberId),
+            isNull(groupMembers.leftAt),
+          ),
+        );
+      if (!debtor || debtor.id === me.id) {
+        return { ok: false, reason: 'foreign-member' } as const;
+      }
+      const ledgers = await loadDebtTotals(tx, [input.groupId]);
+      const owed =
+        debtsOf(
+          netDebts(ledgers.get(input.groupId)?.totals ?? []),
+          me.id,
+        ).debts.find((debt) => debt.fromId === debtor.id && debt.toId === me.id)
+          ?.cents ?? 0;
+      if (owed === 0) {
+        return { ok: false, reason: 'no-debt' } as const;
+      }
+      if (input.amountCents > owed) {
+        return { ok: false, reason: 'too-much', owedCents: owed } as const;
+      }
+
+      const [open] = await tx
+        .select({
+          id: paymentRequests.id,
+          amountCents: paymentRequests.amountCents,
+        })
+        .from(paymentRequests)
+        .where(
+          and(
+            eq(paymentRequests.groupId, input.groupId),
+            eq(paymentRequests.requesterMemberId, me.id),
+            eq(paymentRequests.debtorMemberId, debtor.id),
+            isActive,
+          ),
+        )
+        .for('update');
+      const closesRequest = open && input.amountCents >= open.amountCents;
+      await tx.insert(payments).values({
+        groupId: input.groupId,
+        fromMemberId: debtor.id,
+        toMemberId: me.id,
+        amountCents: input.amountCents,
+        method: 'cash',
+        token: null,
+        signature: null,
+        recordedBy: input.userId,
+        requestId: closesRequest ? open.id : null,
+        createdAt: input.at,
+      });
+      if (open) {
+        await tx
+          .update(paymentRequests)
+          .set(
+            closesRequest
+              ? { paidAt: input.at }
+              : { replacedAt: input.at, cancelledAt: input.at },
+          )
+          .where(eq(paymentRequests.id, open.id));
+      }
+      await tx
+        .update(groups)
+        .set({ lastActivityAt: input.at })
+        .where(eq(groups.id, input.groupId));
+      return {
+        ok: true,
+        remainingCents: owed - input.amountCents,
+        closedRequest: Boolean(open),
+      } as const;
+    });
   }
 }

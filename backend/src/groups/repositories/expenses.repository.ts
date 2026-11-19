@@ -15,6 +15,15 @@ export interface ExpenseRecord {
   myShareCents: number;
   original: { currency: FiatCurrency; amount: number; rate: number } | null;
   createdAt: Date;
+  /** Может ли тот, кто спрашивает, править и удалять: автор или плательщик */
+  canEdit: boolean;
+}
+
+/** Расход для формы правки: с долями всех участников */
+export interface ExpenseDetailRecord extends ExpenseRecord {
+  splitMode: SplitMode;
+  shares: Array<{ memberId: string; amountCents: number }>;
+  updatedAt: Date | null;
 }
 
 export interface NewExpense {
@@ -48,13 +57,26 @@ export type ActivityRecord =
       from: PersonRecord;
       to: PersonRecord;
       amountCents: number;
-      signature: string;
+      method: 'onchain' | 'cash';
+      /** У наличных — null */
+      signature: string | null;
       createdAt: Date;
     };
 
 export type CreateExpenseResult =
   | { ok: true; expense: ExpenseRecord }
   | { ok: false; reason: 'not-member' | 'foreign-member' };
+
+export type UpdateExpenseResult =
+  | { ok: true; expense: ExpenseRecord }
+  | {
+      ok: false;
+      reason: 'not-member' | 'not-found' | 'forbidden' | 'foreign-member';
+    };
+
+export type DeleteExpenseResult =
+  | { ok: true }
+  | { ok: false; reason: 'not-member' | 'not-found' | 'forbidden' };
 
 export abstract class ExpensesRepository {
   /**
@@ -66,6 +88,31 @@ export abstract class ExpensesRepository {
     userId: string,
     expense: NewExpense,
   ): Promise<CreateExpenseResult>;
+
+  /** Расход с долями — если userId состоит в группе. Иначе undefined */
+  abstract findDetail(
+    groupId: string,
+    expenseId: string,
+    userId: string,
+  ): Promise<ExpenseDetailRecord | undefined>;
+
+  /**
+   * Заменяет расход целиком (доли тоже). Править может автор расхода или его плательщик;
+   * новый плательщик и доли — действующие участники группы.
+   */
+  abstract update(
+    groupId: string,
+    expenseId: string,
+    userId: string,
+    expense: NewExpense,
+  ): Promise<UpdateExpenseResult>;
+
+  /** Удаляет расход с долями. Права — как у update */
+  abstract remove(
+    groupId: string,
+    expenseId: string,
+    userId: string,
+  ): Promise<DeleteExpenseResult>;
 
   /** Расходы группы, новые сверху, с долей userId */
   abstract listForGroup(

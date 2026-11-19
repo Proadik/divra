@@ -1,11 +1,13 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import type {
   ActivityView,
+  ExpenseDetailView,
   ExpenseView,
   GroupMemberView,
   GroupOverview,
@@ -23,6 +25,7 @@ import {
   type ActivityRecord,
   type ExpenseRecord,
   ExpensesRepository,
+  type NewExpense,
 } from './repositories/expenses.repository.js';
 import {
   type GroupRecord,
@@ -31,10 +34,14 @@ import {
   MAX_MEMBERS_PER_GROUP,
   type MemberRecord,
 } from './repositories/groups.repository.js';
+import { DomainEvents } from '../events/domain-events.js';
 
 /** Сколько расходов отдаёт сводка группы и сколько событий — лента на главной */
 const EXPENSES_LIMIT = 100;
 const ACTIVITY_LIMIT = 5;
+
+const editForbidden = (): ForbiddenException =>
+  new ForbiddenException('Править расход может только автор или плательщик');
 
 /** Одинаковый ответ для «нет такой группы» и «ты в ней не состоишь»: id чужих групп не угадать */
 const groupNotFound = (): NotFoundException =>
@@ -63,6 +70,23 @@ const expenseView = (expense: ExpenseRecord): ExpenseView => ({
   myShare: toDollars(expense.myShareCents),
   original: expense.original,
   createdAt: expense.createdAt.toISOString(),
+  canEdit: expense.canEdit,
+});
+
+const expenseNotFound = (): NotFoundException =>
+  new NotFoundException('Расход не найден');
+
+const toNewExpense = (input: CreateExpenseRequest): NewExpense => ({
+  title: input.title,
+  category: input.category,
+  paidByMemberId: input.paidById,
+  amountCents: input.amount,
+  splitMode: input.splitMode,
+  original: input.original ?? null,
+  shares: input.shares.map((share) => ({
+    memberId: share.memberId,
+    amountCents: share.amount,
+  })),
 });
 
 const personView = (
@@ -78,7 +102,7 @@ const activityView = (item: ActivityRecord, userId: string): ActivityView => {
   if (item.kind === 'payment') {
     return {
       id: item.id,
-      type: 'payment',
+      type: item.method === 'cash' ? 'cash' : 'payment',
       groupId: item.groupId,
       groupName: item.groupName,
       actor: personView(item.from, userId),
@@ -114,7 +138,13 @@ export class GroupsService {
   constructor(
     private readonly groups: GroupsRepository,
     private readonly expenses: ExpensesRepository,
+    private readonly events: DomainEvents,
   ) {}
+
+  /** Данные группы изменились — участникам уйдёт событие (WebSocket) */
+  private changed(groupId: string): void {
+    this.events.emit({ type: 'group.changed', groupId });
+  }
 
   async home(userId: string): Promise<HomeOverview> {
     const groups = await this.groups.listForUser(userId);
@@ -228,6 +258,7 @@ export class GroupsService {
       input.displayName,
     );
     if (result.ok) {
+      this.changed(groupId);
       return memberView(result.member, userId);
     }
     switch (result.reason) {
@@ -247,25 +278,123 @@ export class GroupsService {
     userId: string,
     input: CreateExpenseRequest,
   ): Promise<ExpenseView> {
-    const result = await this.expenses.create(groupId, userId, {
-      title: input.title,
-      category: input.category,
-      paidByMemberId: input.paidById,
-      amountCents: input.amount,
-      splitMode: input.splitMode,
-      original: input.original ?? null,
-      shares: input.shares.map((share) => ({
-        memberId: share.memberId,
-        amountCents: share.amount,
-      })),
-    });
+    const result = await this.expenses.create(
+      groupId,
+      userId,
+      toNewExpense(input),
+    );
     if (result.ok) {
+      this.changed(groupId);
       return expenseView(result.expense);
     }
     if (result.reason === 'not-member') {
       throw groupNotFound();
     }
-    throw new UnprocessableEntityException('Участник не из этой группы');
+    throw new UnprocessableEntityException(
+      'Участник не из этой группы или вышел из неё',
+    );
+  }
+
+  async expense(
+    groupId: string,
+    expenseId: string,
+    userId: string,
+  ): Promise<ExpenseDetailView> {
+    const found = await this.expenses.findDetail(groupId, expenseId, userId);
+    if (!found) {
+      // Группа чужая или расхода нет — не различаем
+      if (!(await this.groups.findForMember(groupId, userId))) {
+        throw groupNotFound();
+      }
+      throw expenseNotFound();
+    }
+    return {
+      ...expenseView(found),
+      splitMode: found.splitMode,
+      shares: found.shares.map((share) => ({
+        memberId: share.memberId,
+        amount: toDollars(share.amountCents),
+      })),
+      updatedAt: found.updatedAt?.toISOString() ?? null,
+    };
+  }
+
+  async updateExpense(
+    groupId: string,
+    expenseId: string,
+    userId: string,
+    input: CreateExpenseRequest,
+  ): Promise<ExpenseView> {
+    const result = await this.expenses.update(
+      groupId,
+      expenseId,
+      userId,
+      toNewExpense(input),
+    );
+    if (result.ok) {
+      this.changed(groupId);
+      return expenseView(result.expense);
+    }
+    switch (result.reason) {
+      case 'not-member':
+        throw groupNotFound();
+      case 'not-found':
+        throw expenseNotFound();
+      case 'forbidden':
+        throw editForbidden();
+      case 'foreign-member':
+        throw new UnprocessableEntityException(
+          'Участник не из этой группы или вышел из неё',
+        );
+    }
+  }
+
+  async deleteExpense(
+    groupId: string,
+    expenseId: string,
+    userId: string,
+  ): Promise<void> {
+    const result = await this.expenses.remove(groupId, expenseId, userId);
+    if (result.ok) {
+      this.changed(groupId);
+      return;
+    }
+    switch (result.reason) {
+      case 'not-member':
+        throw groupNotFound();
+      case 'not-found':
+        throw expenseNotFound();
+      case 'forbidden':
+        throw editForbidden();
+    }
+  }
+
+  /** Выйти из группы (свой memberId) или удалить участника без кошелька */
+  async removeMember(
+    groupId: string,
+    memberId: string,
+    userId: string,
+  ): Promise<{ left: boolean }> {
+    const result = await this.groups.removeMember(groupId, userId, memberId);
+    if (result.ok) {
+      this.changed(groupId);
+      this.events.emit({ type: 'membership.changed' });
+      return { left: result.left };
+    }
+    switch (result.reason) {
+      case 'not-member':
+        throw groupNotFound();
+      case 'not-found':
+        throw new NotFoundException('Участник не найден');
+      case 'has-wallet':
+        throw new ForbiddenException(
+          'Участника с кошельком удалить нельзя — он может выйти только сам',
+        );
+      case 'has-debts':
+        throw new ConflictException(
+          'Сначала рассчитайтесь: у участника есть долги или ему должны',
+        );
+    }
   }
 
   private summaryOf(

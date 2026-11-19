@@ -2,6 +2,7 @@ import type {
   ExpenseCategory,
   FiatCurrency,
   GroupKind,
+  SplitMode,
 } from '../database/schema/index.js';
 
 /**
@@ -57,6 +58,15 @@ export interface ExpenseView {
   myShare: number;
   original: { currency: FiatCurrency; amount: number; rate: number } | null;
   createdAt: string;
+  /** Можешь ли ты править и удалять: ты автор или плательщик */
+  canEdit: boolean;
+}
+
+/** Расход для формы правки */
+export interface ExpenseDetailView extends ExpenseView {
+  splitMode: SplitMode;
+  shares: Array<{ memberId: string; amount: number }>;
+  updatedAt: string | null;
 }
 
 export interface PersonView {
@@ -65,10 +75,10 @@ export interface PersonView {
   isMe: boolean;
 }
 
-/** Событие ленты «Недавнее». Переводы появятся вместе с расчётами */
+/** Событие ленты «Недавнее»: расход, перевод в сети или наличные */
 export interface ActivityView {
   id: string;
-  type: 'expense' | 'payment';
+  type: 'expense' | 'payment' | 'cash';
   groupId: string;
   groupName: string;
   actor: PersonView;

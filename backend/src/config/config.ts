@@ -53,6 +53,20 @@ const schema = z
       .min(0)
       .max(3_600_000)
       .default(20_000),
+    /**
+     * Ключ Helius для потока LaserStream (gRPC): по нему Divra замечает переводы между участниками,
+     * сделанные мимо приложения. Пусто — функция выключена, остальное работает как обычно
+     */
+    HELIUS_API_KEY: z.string().max(128).default(''),
+    /** Адрес LaserStream; пусто — по SOLANA_CLUSTER (devnet или mainnet, регион EWR) */
+    LASERSTREAM_ENDPOINT: z
+      .union([z.url({ protocol: /^https$/ }), z.literal('')])
+      .default(''),
+    /**
+     * Отладка потока: дополнительно слушать сами токены USDC/USDT и писать в лог каждый их перевод
+     * в сети, а не только переводы участников. На mainnet это тысячи строк в секунду — только для devnet
+     */
+    TRANSFER_LOG_ALL: booleanString.default(false),
     CHALLENGE_TTL_SECONDS: z.coerce
       .number()
       .int()

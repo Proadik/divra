@@ -5,7 +5,8 @@ import { STABLECOINS } from '../../database/schema/index.js';
 /** Сколько переводов влезает в одну транзакцию Solana вместе с созданием токен-аккаунтов */
 export const MAX_SETTLEMENT_TRANSFERS = 8;
 
-const cents = z
+/** Сумма в долларах → целые центы, больше нуля и не больше $1 000 000 */
+export const cents = z
   .number()
   .finite()
   .positive('Сумма должна быть больше нуля')

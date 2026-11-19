@@ -16,13 +16,22 @@ export interface PaymentRequestRecord {
   expiresAt: Date;
   lastCheckedAt: Date | null;
   paidAt: Date | null;
-  /** Заменён более новым запросом тому же должнику */
+  /** Заменён более новым запросом тому же должнику (или отменён) */
   replacedAt: Date | null;
+  /** Отменён получателем, при выходе из группы или частичной оплатой наличными */
+  cancelledAt: Date | null;
+  lastRemindedAt: Date | null;
 }
 
 export type NewPaymentRequest = Omit<
   PaymentRequestRecord,
-  'id' | 'createdAt' | 'lastCheckedAt' | 'paidAt' | 'replacedAt'
+  | 'id'
+  | 'createdAt'
+  | 'lastCheckedAt'
+  | 'paidAt'
+  | 'replacedAt'
+  | 'cancelledAt'
+  | 'lastRemindedAt'
 > & { createdBy: string; remindInDays: number | null };
 
 /** Запрос с именами — для публичной страницы */
@@ -41,6 +50,21 @@ export type RecordPaymentResult =
   | 'already-paid'
   /** Эта транзакция уже засчитана другому запросу */
   | 'signature-used';
+
+export type CancelRequestResult = 'cancelled' | 'not-found' | 'paid';
+
+export type RemindResult =
+  | { ok: true; request: PaymentRequestDetails }
+  | { ok: false; reason: 'not-found' | 'not-open' }
+  | { ok: false; reason: 'too-soon'; nextAt: Date };
+
+export type RecordCashResult =
+  | { ok: true; remainingCents: number; closedRequest: boolean }
+  | {
+      ok: false;
+      reason: 'not-member' | 'foreign-member' | 'no-debt' | 'too-much';
+      owedCents?: number;
+    };
 
 export abstract class PaymentsRepository {
   /**
@@ -80,4 +104,37 @@ export abstract class PaymentsRepository {
     payment: { signature: string; amountCents: number },
     at: Date,
   ): Promise<RecordPaymentResult>;
+
+  /** Отменить свой открытый запрос: ссылка ответит 410, напоминать по нему нельзя */
+  abstract cancelRequest(
+    groupId: string,
+    requesterMemberId: string,
+    code: string,
+    at: Date,
+  ): Promise<CancelRequestResult>;
+
+  /**
+   * Отметить напоминание по своему открытому запросу. Атомарно: не чаще раза в minIntervalMs,
+   * параллельные вызовы не пройдут оба.
+   */
+  abstract markReminded(
+    groupId: string,
+    requesterMemberId: string,
+    code: string,
+    at: Date,
+    minIntervalMs: number,
+  ): Promise<RemindResult>;
+
+  /**
+   * Получатель (userId) отмечает, что debtor отдал ему amountCents вне сети. Не больше долга
+   * debtor → userId после зачёта; долг проверяется под блокировкой группы. Открытый запрос
+   * той же пары закрывается: полностью покрыт — оплачен этой записью, частично — отменён.
+   */
+  abstract recordCash(input: {
+    groupId: string;
+    userId: string;
+    debtorMemberId: string;
+    amountCents: number;
+    at: Date;
+  }): Promise<RecordCashResult>;
 }

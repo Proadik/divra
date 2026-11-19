@@ -1,15 +1,20 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
 } from '@nestjs/common';
 import { CurrentUser } from '@nestjs/authentication';
 import { Throttle, minutes } from '@nestjs/throttler';
 import type {
+  ExpenseDetailView,
   ExpenseView,
   GroupMemberView,
   GroupOverview,
@@ -30,6 +35,16 @@ import { GroupsService } from './groups.service.js';
 const groupIdPipe = new ParseUUIDPipe({
   version: '4',
   exceptionFactory: () => new NotFoundException('Группа не найдена'),
+});
+
+const expenseIdPipe = new ParseUUIDPipe({
+  version: '4',
+  exceptionFactory: () => new NotFoundException('Расход не найден'),
+});
+
+const memberIdPipe = new ParseUUIDPipe({
+  version: '4',
+  exceptionFactory: () => new NotFoundException('Участник не найден'),
 });
 
 /**
@@ -75,6 +90,49 @@ export class GroupsController {
     @Body({ schema: createExpenseRequestSchema }) body: CreateExpenseRequest,
   ): Promise<ExpenseView> {
     return this.groups.createExpense(groupId, userId, body);
+  }
+
+  @Get(':groupId/expenses/:expenseId')
+  expense(
+    @CurrentUser('id') userId: string,
+    @Param('groupId', groupIdPipe) groupId: string,
+    @Param('expenseId', expenseIdPipe) expenseId: string,
+  ): Promise<ExpenseDetailView> {
+    return this.groups.expense(groupId, expenseId, userId);
+  }
+
+  /** Заменить расход целиком: тело как при создании. Только автор или плательщик */
+  @Put(':groupId/expenses/:expenseId')
+  @Throttle({ default: { limit: 60, ttl: minutes(1) } })
+  updateExpense(
+    @CurrentUser('id') userId: string,
+    @Param('groupId', groupIdPipe) groupId: string,
+    @Param('expenseId', expenseIdPipe) expenseId: string,
+    @Body({ schema: createExpenseRequestSchema }) body: CreateExpenseRequest,
+  ): Promise<ExpenseView> {
+    return this.groups.updateExpense(groupId, expenseId, userId, body);
+  }
+
+  @Delete(':groupId/expenses/:expenseId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ default: { limit: 60, ttl: minutes(1) } })
+  deleteExpense(
+    @CurrentUser('id') userId: string,
+    @Param('groupId', groupIdPipe) groupId: string,
+    @Param('expenseId', expenseIdPipe) expenseId: string,
+  ): Promise<void> {
+    return this.groups.deleteExpense(groupId, expenseId, userId);
+  }
+
+  /** Свой memberId — выйти из группы; чужой — удалить участника без кошелька. Только без долгов */
+  @Delete(':groupId/members/:memberId')
+  @Throttle({ default: { limit: 30, ttl: minutes(1) } })
+  removeMember(
+    @CurrentUser('id') userId: string,
+    @Param('groupId', groupIdPipe) groupId: string,
+    @Param('memberId', memberIdPipe) memberId: string,
+  ): Promise<{ left: boolean }> {
+    return this.groups.removeMember(groupId, memberId, userId);
   }
 }
 

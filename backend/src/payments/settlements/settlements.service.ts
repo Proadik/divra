@@ -30,6 +30,7 @@ import {
   type SettlementRecord,
   SettlementsRepository,
 } from './settlements.repository.js';
+import { DomainEvents } from '../../events/domain-events.js';
 
 /** Сколько живёт собранная транзакция: blockhash в Solana действует около минуты */
 const SETTLEMENT_TTL_MS = 2 * 60_000;
@@ -88,6 +89,7 @@ export class SettlementsService {
     private readonly lookup: PaymentLookup,
     private readonly sender: TransactionSender,
     private readonly blockhashes: BlockhashSource,
+    private readonly events: DomainEvents,
   ) {}
 
   /**
@@ -307,6 +309,7 @@ export class SettlementsService {
       );
     }
     await this.repository.confirm(settlement, verified, signature, new Date());
+    this.events.emit({ type: 'group.changed', groupId: settlement.groupId });
     this.logger.log(
       `Расчёт ${settlement.id} подтверждён: ${verified.length} из ${settlement.transfers.length}`,
     );

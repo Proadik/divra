@@ -3,6 +3,8 @@ import {
   BadRequestException,
   ConflictException,
   GoneException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -15,6 +17,8 @@ import { APP_CONFIG, type AppConfig } from '../config/config.js';
 import { GroupsService } from '../groups/groups.service.js';
 import { UsersRepository } from '../users/repositories/users.repository.js';
 import type {
+  CashPaymentResult,
+  PaymentReminder,
   PaymentRequestPreview,
   PaymentRequestView,
   SentPaymentRequest,
@@ -36,6 +40,7 @@ import {
 } from './repositories/payments.repository.js';
 import { PaymentLookup } from './solana/payment-lookup.js';
 import { RAW_UNITS_PER_CENT, stablecoinMint } from './solana/stablecoins.js';
+import { DomainEvents } from '../events/domain-events.js';
 
 /** Сколько живёт ссылка на оплату */
 const REQUEST_TTL_MS = 14 * 24 * 3_600_000;
@@ -43,6 +48,11 @@ const REQUEST_TTL_MS = 14 * 24 * 3_600_000;
 const SENT_LIMIT = 50;
 /** Не чаще раза в столько искать оплату при открытии страницы */
 const RECHECK_MS = 10_000;
+/** Напоминать по одному запросу — не чаще раза в сутки */
+export const REMIND_INTERVAL_MS = 24 * 3_600_000;
+
+const formatAmount = (cents: number): string =>
+  (cents / 100).toFixed(2).replace(/\.00$/, '');
 
 const requestNotFound = (): NotFoundException =>
   new NotFoundException('Запрос не найден');
@@ -59,6 +69,7 @@ export class PaymentsService {
     private readonly lookup: PaymentLookup,
     private readonly blockhashes: BlockhashSource,
     private readonly sender: TransactionSender,
+    private readonly events: DomainEvents,
   ) {}
 
   /**
@@ -125,6 +136,9 @@ export class PaymentsService {
     }
     if (request.paidAt) {
       throw new ConflictException('Запрос уже оплачен');
+    }
+    if (request.cancelledAt) {
+      throw new GoneException('Запрос отменён');
     }
     if (request.replacedAt) {
       throw new GoneException('Запрос заменён новым — попроси свежую ссылку');
@@ -203,6 +217,7 @@ export class PaymentsService {
       drafts.map((draft) => draft.request),
       now,
     );
+    this.events.emit({ type: 'group.changed', groupId });
     return created.map((request) => {
       const debtor = drafts.find(
         (draft) => draft.debtor.id === request.debtorMemberId,
@@ -256,7 +271,122 @@ export class PaymentsService {
       expiresAt: request.expiresAt.toISOString(),
       paidAt: request.paidAt?.toISOString() ?? null,
       signature: request.signature,
+      remindedAt: request.lastRemindedAt?.toISOString() ?? null,
     }));
+  }
+
+  /** Отменить свой открытый запрос */
+  async cancel(groupId: string, code: string, userId: string): Promise<void> {
+    const ledger = await this.groups.ledgerFor(groupId, userId);
+    if (!ledger) {
+      throw new NotFoundException('Группа не найдена');
+    }
+    if (!PAYMENT_CODE.test(code)) {
+      throw requestNotFound();
+    }
+    const result = await this.repository.cancelRequest(
+      groupId,
+      ledger.me.id,
+      code,
+      new Date(),
+    );
+    if (result === 'paid') {
+      throw new ConflictException('Запрос уже оплачен');
+    }
+    if (result === 'not-found') {
+      throw requestNotFound();
+    }
+    this.events.emit({ type: 'group.changed', groupId });
+  }
+
+  /**
+   * Напоминание по своему открытому запросу: текст со ссылкой для мессенджера.
+   * Отправляет его сам пользователь, сервер только не даёт напоминать чаще раза в сутки.
+   */
+  async remind(
+    groupId: string,
+    code: string,
+    userId: string,
+  ): Promise<PaymentReminder> {
+    const ledger = await this.groups.ledgerFor(groupId, userId);
+    if (!ledger) {
+      throw new NotFoundException('Группа не найдена');
+    }
+    if (!PAYMENT_CODE.test(code)) {
+      throw requestNotFound();
+    }
+    const now = new Date();
+    const result = await this.repository.markReminded(
+      groupId,
+      ledger.me.id,
+      code,
+      now,
+      REMIND_INTERVAL_MS,
+    );
+    if (!result.ok) {
+      switch (result.reason) {
+        case 'not-found':
+          throw requestNotFound();
+        case 'not-open':
+          throw new ConflictException(
+            'Запрос уже оплачен, отменён или истёк — напоминать не о чем',
+          );
+        case 'too-soon':
+          throw new HttpException(
+            'Уже напоминал за последние сутки — следующее напоминание завтра',
+            HttpStatus.TOO_MANY_REQUESTS,
+          );
+      }
+    }
+    const { request } = result;
+    const url = `${this.config.APP_ORIGIN}/r/${request.code}`;
+    return {
+      code: request.code,
+      url,
+      text: `${request.debtorName}, напоминаю про долг в «${request.groupName}»: ${formatAmount(request.amountCents)} ${request.token}. Оплатить можно по ссылке: ${url}`,
+      remindedAt: now.toISOString(),
+      nextReminderAt: new Date(
+        now.getTime() + REMIND_INTERVAL_MS,
+      ).toISOString(),
+    };
+  }
+
+  /**
+   * Получатель отмечает, что долг вернули наличными (вне сети). Записать может только тот,
+   * кому должны: сам себе долг должник не закроет.
+   */
+  async recordCash(
+    groupId: string,
+    userId: string,
+    input: { memberId: string; amount: number },
+  ): Promise<CashPaymentResult> {
+    const result = await this.repository.recordCash({
+      groupId,
+      userId,
+      debtorMemberId: input.memberId,
+      amountCents: input.amount,
+      at: new Date(),
+    });
+    if (result.ok) {
+      this.events.emit({ type: 'group.changed', groupId });
+      return {
+        memberId: input.memberId,
+        amount: input.amount / 100,
+        remaining: result.remainingCents / 100,
+      };
+    }
+    switch (result.reason) {
+      case 'not-member':
+        throw new NotFoundException('Группа не найдена');
+      case 'foreign-member':
+        throw new UnprocessableEntityException('Участник не из этой группы');
+      case 'no-debt':
+        throw new ConflictException('Этот участник тебе ничего не должен');
+      case 'too-much':
+        throw new UnprocessableEntityException(
+          `Больше долга: должен ${formatAmount(result.owedCents ?? 0)}`,
+        );
+    }
   }
 
   /**
@@ -272,6 +402,9 @@ export class PaymentsService {
       throw requestNotFound();
     }
     const now = new Date();
+    if (!request.paidAt && request.cancelledAt) {
+      throw new GoneException('Запрос отменён');
+    }
     if (!request.paidAt && request.replacedAt) {
       throw new GoneException('Запрос заменён новым — попроси свежую ссылку');
     }
@@ -347,6 +480,7 @@ export class PaymentsService {
           now,
         );
         if (result === 'recorded') {
+          this.events.emit({ type: 'group.changed', groupId: request.groupId });
           this.logger.log(
             `Запрос ${request.id} оплачен: ${transfer.signature}`,
           );

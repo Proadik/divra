@@ -39,6 +39,8 @@ export const invites = pgTable(
     uses: integer('uses').notNull().default(0),
     /** Персональное: когда участника забрали. После этого ссылка не работает */
     claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    /** Отозвано участником группы до срока */
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
   },
   (table) => [
     uniqueIndex('invites_code_uq').on(table.code),

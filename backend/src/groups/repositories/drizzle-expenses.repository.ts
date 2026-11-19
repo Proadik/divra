@@ -7,11 +7,16 @@ import {
   eq,
   gt,
   inArray,
+  isNull,
   ne,
   or,
   sql,
 } from 'drizzle-orm';
-import type { Database } from '../../database/database.module.js';
+import type {
+  Database,
+  DatabaseExecutor,
+  Transaction as Tx,
+} from '../../database/database.module.js';
 import {
   expenseShares,
   expenses,
@@ -23,13 +28,23 @@ import type { DebtTotal } from '../ledger.js';
 import {
   type ActivityRecord,
   type CreateExpenseResult,
+  type DeleteExpenseResult,
+  type ExpenseDetailRecord,
   type ExpenseRecord,
   ExpensesRepository,
   type NewExpense,
+  type UpdateExpenseResult,
 } from './expenses.repository.js';
 
 const me = aliasedTable(groupMembers, 'me');
 const myShare = aliasedTable(expenseShares, 'my_share');
+const payer = aliasedTable(groupMembers, 'payer');
+
+/** Править расход может его автор или плательщик. Нужен join payer */
+const canEditColumn = (userId: string) =>
+  sql<boolean>`(${expenses.createdBy} = ${userId} or ${payer.userId} = ${userId})`.mapWith(
+    Boolean,
+  );
 
 const expenseColumns = {
   id: expenses.id,
@@ -52,6 +67,49 @@ type ExpenseRow = {
     : (typeof expenses.$inferSelect)[K extends keyof typeof expenses.$inferSelect
         ? K
         : never];
+} & { canEdit: boolean };
+
+/** Участник userId в группе с блокировкой группы: состав не меняется, пока пишем */
+const lockMembership = async (
+  tx: Tx,
+  groupId: string,
+  userId: string,
+): Promise<string | undefined> => {
+  const [membership] = await tx
+    .select({ memberId: groupMembers.id })
+    .from(groups)
+    .innerJoin(
+      groupMembers,
+      and(eq(groupMembers.groupId, groups.id), eq(groupMembers.userId, userId)),
+    )
+    .where(eq(groups.id, groupId))
+    .for('update', { of: groups });
+  return membership?.memberId;
+};
+
+/** Плательщик и все доли — действующие участники этой группы */
+const allActiveMembers = async (
+  db: DatabaseExecutor,
+  groupId: string,
+  input: NewExpense,
+): Promise<boolean> => {
+  const referenced = [
+    ...new Set([
+      input.paidByMemberId,
+      ...input.shares.map((share) => share.memberId),
+    ]),
+  ];
+  const found = await db
+    .select({ id: groupMembers.id })
+    .from(groupMembers)
+    .where(
+      and(
+        eq(groupMembers.groupId, groupId),
+        inArray(groupMembers.id, referenced),
+        isNull(groupMembers.leftAt),
+      ),
+    );
+  return found.length === referenced.length;
 };
 
 const toRecord = ({
@@ -71,6 +129,82 @@ const toRecord = ({
       : null,
 });
 
+/**
+ * Сырые долги по группам (см. ExpensesRepository.debtTotals). Отдельной функцией —
+ * чтобы проверять долги внутри чужой транзакции (выход из группы, наличные).
+ */
+export const loadDebtTotals = async (
+  db: DatabaseExecutor,
+  groupIds: string[],
+): Promise<Map<string, { totals: DebtTotal[]; transfers: number }>> => {
+  const result = new Map<string, { totals: DebtTotal[]; transfers: number }>();
+  if (groupIds.length === 0) {
+    return result;
+  }
+  const rows = await db
+    .select({
+      groupId: expenseShares.groupId,
+      fromId: expenseShares.memberId,
+      toId: expenses.paidByMemberId,
+      cents: sql<number>`sum(${expenseShares.amountCents})`.mapWith(Number),
+      transfers: sql<number>`count(*)`.mapWith(Number),
+    })
+    .from(expenseShares)
+    .innerJoin(
+      expenses,
+      and(
+        eq(expenses.id, expenseShares.expenseId),
+        eq(expenses.groupId, expenseShares.groupId),
+      ),
+    )
+    .where(
+      and(
+        inArray(expenseShares.groupId, groupIds),
+        ne(expenseShares.memberId, expenses.paidByMemberId),
+        gt(expenseShares.amountCents, 0),
+      ),
+    )
+    .groupBy(
+      expenseShares.groupId,
+      expenseShares.memberId,
+      expenses.paidByMemberId,
+    );
+  // Перевод from → to гасит долг from перед to: в журнал он идёт встречным долгом to → from
+  const paid = await db
+    .select({
+      groupId: payments.groupId,
+      fromId: payments.toMemberId,
+      toId: payments.fromMemberId,
+      cents: sql<number>`sum(${payments.amountCents})`.mapWith(Number),
+      transfers: sql<number>`0`.mapWith(Number),
+    })
+    .from(payments)
+    .where(inArray(payments.groupId, groupIds))
+    .groupBy(payments.groupId, payments.fromMemberId, payments.toMemberId);
+  // Сколько переводов было бы без взаимозачёта: пары «кто → кому» по расходам,
+  // где после уже сделанных переводов ещё что-то осталось
+  const paidByPair = new Map(
+    paid.map((row) => [`${row.groupId}:${row.toId}>${row.fromId}`, row.cents]),
+  );
+  for (const row of [...rows, ...paid]) {
+    const entry = result.get(row.groupId) ?? { totals: [], transfers: 0 };
+    entry.totals.push({
+      fromId: row.fromId,
+      toId: row.toId,
+      cents: row.cents,
+    });
+    const isExpensePair = row.transfers > 0;
+    const left =
+      row.cents -
+      (paidByPair.get(`${row.groupId}:${row.fromId}>${row.toId}`) ?? 0);
+    if (isExpensePair && left > 0) {
+      entry.transfers += 1;
+    }
+    result.set(row.groupId, entry);
+  }
+  return result;
+};
+
 @Injectable()
 export class DrizzleExpensesRepository extends ExpensesRepository {
   constructor(@InjectDrizzle() private readonly db: Database) {
@@ -83,38 +217,11 @@ export class DrizzleExpensesRepository extends ExpensesRepository {
     input: NewExpense,
   ): Promise<CreateExpenseResult> {
     return this.db.transaction(async (tx) => {
-      // Блокировка группы: состав участников не меняется, пока пишем расход
-      const [membership] = await tx
-        .select({ memberId: groupMembers.id })
-        .from(groups)
-        .innerJoin(
-          groupMembers,
-          and(
-            eq(groupMembers.groupId, groups.id),
-            eq(groupMembers.userId, userId),
-          ),
-        )
-        .where(eq(groups.id, groupId))
-        .for('update', { of: groups });
-      if (!membership) {
+      const memberId = await lockMembership(tx, groupId, userId);
+      if (!memberId) {
         return { ok: false, reason: 'not-member' } as const;
       }
-      const referenced = [
-        ...new Set([
-          input.paidByMemberId,
-          ...input.shares.map((share) => share.memberId),
-        ]),
-      ];
-      const found = await tx
-        .select({ id: groupMembers.id })
-        .from(groupMembers)
-        .where(
-          and(
-            eq(groupMembers.groupId, groupId),
-            inArray(groupMembers.id, referenced),
-          ),
-        );
-      if (found.length !== referenced.length) {
+      if (!(await allActiveMembers(tx, groupId, input))) {
         return { ok: false, reason: 'foreign-member' } as const;
       }
 
@@ -161,13 +268,174 @@ export class DrizzleExpensesRepository extends ExpensesRepository {
           paidByMemberId: input.paidByMemberId,
           amountCents: input.amountCents,
           myShareCents:
-            shares.find((share) => share.memberId === membership.memberId)
-              ?.amountCents ?? 0,
+            shares.find((share) => share.memberId === memberId)?.amountCents ??
+            0,
           original: input.original,
           createdAt: created.createdAt,
+          canEdit: true,
         },
       } as const;
     });
+  }
+
+  async findDetail(
+    groupId: string,
+    expenseId: string,
+    userId: string,
+  ): Promise<ExpenseDetailRecord | undefined> {
+    const [row] = await this.db
+      .select({
+        ...expenseColumns,
+        canEdit: canEditColumn(userId),
+        splitMode: expenses.splitMode,
+        updatedAt: expenses.updatedAt,
+      })
+      .from(expenses)
+      .innerJoin(
+        me,
+        and(eq(me.groupId, expenses.groupId), eq(me.userId, userId)),
+      )
+      .innerJoin(payer, eq(payer.id, expenses.paidByMemberId))
+      .leftJoin(
+        myShare,
+        and(eq(myShare.expenseId, expenses.id), eq(myShare.memberId, me.id)),
+      )
+      .where(and(eq(expenses.groupId, groupId), eq(expenses.id, expenseId)));
+    if (!row) {
+      return undefined;
+    }
+    const { splitMode, updatedAt, ...rest } = row;
+    const shares = await this.db
+      .select({
+        memberId: expenseShares.memberId,
+        amountCents: expenseShares.amountCents,
+      })
+      .from(expenseShares)
+      .where(
+        and(
+          eq(expenseShares.groupId, groupId),
+          eq(expenseShares.expenseId, expenseId),
+        ),
+      );
+    return { ...toRecord(rest), splitMode, updatedAt, shares };
+  }
+
+  async update(
+    groupId: string,
+    expenseId: string,
+    userId: string,
+    input: NewExpense,
+  ): Promise<UpdateExpenseResult> {
+    return this.db.transaction(async (tx) => {
+      const memberId = await lockMembership(tx, groupId, userId);
+      if (!memberId) {
+        return { ok: false, reason: 'not-member' } as const;
+      }
+      const access = await this.editAccess(tx, groupId, expenseId, userId);
+      if (access !== 'ok') {
+        return { ok: false, reason: access } as const;
+      }
+      if (!(await allActiveMembers(tx, groupId, input))) {
+        return { ok: false, reason: 'foreign-member' } as const;
+      }
+      const now = new Date();
+      const [updated] = await tx
+        .update(expenses)
+        .set({
+          title: input.title,
+          category: input.category,
+          paidByMemberId: input.paidByMemberId,
+          amountCents: input.amountCents,
+          splitMode: input.splitMode,
+          originalCurrency: input.original?.currency ?? null,
+          originalAmount: input.original?.amount ?? null,
+          originalRate: input.original?.rate ?? null,
+          updatedAt: now,
+        })
+        .where(and(eq(expenses.groupId, groupId), eq(expenses.id, expenseId)))
+        .returning({ createdAt: expenses.createdAt });
+      if (!updated) {
+        return { ok: false, reason: 'not-found' } as const;
+      }
+      await tx
+        .delete(expenseShares)
+        .where(
+          and(
+            eq(expenseShares.groupId, groupId),
+            eq(expenseShares.expenseId, expenseId),
+          ),
+        );
+      const shares = input.shares.filter((share) => share.amountCents > 0);
+      await tx.insert(expenseShares).values(
+        shares.map((share) => ({
+          expenseId,
+          groupId,
+          memberId: share.memberId,
+          amountCents: share.amountCents,
+        })),
+      );
+      await tx
+        .update(groups)
+        .set({ lastActivityAt: now })
+        .where(eq(groups.id, groupId));
+      return {
+        ok: true,
+        expense: {
+          id: expenseId,
+          title: input.title,
+          category: input.category,
+          paidByMemberId: input.paidByMemberId,
+          amountCents: input.amountCents,
+          myShareCents:
+            shares.find((share) => share.memberId === memberId)?.amountCents ??
+            0,
+          original: input.original,
+          createdAt: updated.createdAt,
+          canEdit: true,
+        },
+      } as const;
+    });
+  }
+
+  async remove(
+    groupId: string,
+    expenseId: string,
+    userId: string,
+  ): Promise<DeleteExpenseResult> {
+    return this.db.transaction(async (tx) => {
+      const memberId = await lockMembership(tx, groupId, userId);
+      if (!memberId) {
+        return { ok: false, reason: 'not-member' } as const;
+      }
+      const access = await this.editAccess(tx, groupId, expenseId, userId);
+      if (access !== 'ok') {
+        return { ok: false, reason: access } as const;
+      }
+      // Доли удалятся каскадом (expense_shares_expense_fk)
+      await tx
+        .delete(expenses)
+        .where(and(eq(expenses.groupId, groupId), eq(expenses.id, expenseId)));
+      return { ok: true } as const;
+    });
+  }
+
+  /** Расход есть в группе, и userId — его автор или плательщик. Строка расхода блокируется */
+  private async editAccess(
+    tx: Tx,
+    groupId: string,
+    expenseId: string,
+    userId: string,
+  ): Promise<'ok' | 'not-found' | 'forbidden'> {
+    const [row] = await tx
+      .select({ canEdit: canEditColumn(userId) })
+      .from(expenses)
+      .innerJoin(payer, eq(payer.id, expenses.paidByMemberId))
+      .where(and(eq(expenses.groupId, groupId), eq(expenses.id, expenseId)))
+      .for('update', { of: expenses });
+    if (!row) {
+      return 'not-found';
+    }
+    return row.canEdit ? 'ok' : 'forbidden';
   }
 
   async listForGroup(
@@ -176,8 +444,9 @@ export class DrizzleExpensesRepository extends ExpensesRepository {
     limit: number,
   ): Promise<ExpenseRecord[]> {
     const rows = await this.db
-      .select(expenseColumns)
+      .select({ ...expenseColumns, canEdit: canEditColumn(userId) })
       .from(expenses)
+      .innerJoin(payer, eq(payer.id, expenses.paidByMemberId))
       .leftJoin(
         me,
         and(eq(me.groupId, expenses.groupId), eq(me.userId, userId)),
@@ -192,91 +461,20 @@ export class DrizzleExpensesRepository extends ExpensesRepository {
     return rows.map(toRecord);
   }
 
-  async debtTotals(
+  debtTotals(
     groupIds: string[],
   ): Promise<Map<string, { totals: DebtTotal[]; transfers: number }>> {
-    const result = new Map<
-      string,
-      { totals: DebtTotal[]; transfers: number }
-    >();
-    if (groupIds.length === 0) {
-      return result;
-    }
-    const rows = await this.db
-      .select({
-        groupId: expenseShares.groupId,
-        fromId: expenseShares.memberId,
-        toId: expenses.paidByMemberId,
-        cents: sql<number>`sum(${expenseShares.amountCents})`.mapWith(Number),
-        transfers: sql<number>`count(*)`.mapWith(Number),
-      })
-      .from(expenseShares)
-      .innerJoin(
-        expenses,
-        and(
-          eq(expenses.id, expenseShares.expenseId),
-          eq(expenses.groupId, expenseShares.groupId),
-        ),
-      )
-      .where(
-        and(
-          inArray(expenseShares.groupId, groupIds),
-          ne(expenseShares.memberId, expenses.paidByMemberId),
-          gt(expenseShares.amountCents, 0),
-        ),
-      )
-      .groupBy(
-        expenseShares.groupId,
-        expenseShares.memberId,
-        expenses.paidByMemberId,
-      );
-    // Перевод from → to гасит долг from перед to: в журнал он идёт встречным долгом to → from
-    const paid = await this.db
-      .select({
-        groupId: payments.groupId,
-        fromId: payments.toMemberId,
-        toId: payments.fromMemberId,
-        cents: sql<number>`sum(${payments.amountCents})`.mapWith(Number),
-        transfers: sql<number>`0`.mapWith(Number),
-      })
-      .from(payments)
-      .where(inArray(payments.groupId, groupIds))
-      .groupBy(payments.groupId, payments.fromMemberId, payments.toMemberId);
-    // Сколько переводов было бы без взаимозачёта: пары «кто → кому» по расходам,
-    // где после уже сделанных переводов ещё что-то осталось
-    const paidByPair = new Map(
-      paid.map((row) => [
-        `${row.groupId}:${row.toId}>${row.fromId}`,
-        row.cents,
-      ]),
-    );
-    for (const row of [...rows, ...paid]) {
-      const entry = result.get(row.groupId) ?? { totals: [], transfers: 0 };
-      entry.totals.push({
-        fromId: row.fromId,
-        toId: row.toId,
-        cents: row.cents,
-      });
-      const isExpensePair = row.transfers > 0;
-      const left =
-        row.cents -
-        (paidByPair.get(`${row.groupId}:${row.fromId}>${row.toId}`) ?? 0);
-      if (isExpensePair && left > 0) {
-        entry.transfers += 1;
-      }
-      result.set(row.groupId, entry);
-    }
-    return result;
+    return loadDebtTotals(this.db, groupIds);
   }
 
   async recentForUser(
     userId: string,
     limit: number,
   ): Promise<ActivityRecord[]> {
-    const payer = aliasedTable(groupMembers, 'payer');
     const rows = await this.db
       .select({
         ...expenseColumns,
+        canEdit: canEditColumn(userId),
         groupId: groups.id,
         groupName: groups.name,
         payerName: payer.displayName,
@@ -313,6 +511,7 @@ export class DrizzleExpensesRepository extends ExpensesRepository {
         groupId: groups.id,
         groupName: groups.name,
         amountCents: payments.amountCents,
+        method: payments.method,
         signature: payments.signature,
         createdAt: payments.createdAt,
         fromName: fromMember.displayName,
@@ -356,6 +555,7 @@ export class DrizzleExpensesRepository extends ExpensesRepository {
         groupId: row.groupId,
         groupName: row.groupName,
         amountCents: row.amountCents,
+        method: row.method,
         signature: row.signature,
         createdAt: row.createdAt,
         from: { name: row.fromName, userId: row.fromUserId },

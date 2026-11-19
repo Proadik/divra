@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   index,
   pgTable,
@@ -20,6 +21,11 @@ export const users = pgTable('users', {
     .notNull()
     .defaultNow(),
   lastSignInAt: timestamp('last_sign_in_at', { withTimezone: true }),
+  /**
+   * Замечать переводы на кошелёк от участников общих групп, сделанные мимо Divra (поток LaserStream).
+   * false — токен-аккаунты пользователя не попадают в подписку
+   */
+  detectTransfers: boolean('detect_transfers').notNull().default(true),
 });
 
 /**

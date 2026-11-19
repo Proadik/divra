@@ -1,6 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { aliasedTable, and, asc, count, desc, eq, inArray } from 'drizzle-orm';
+import {
+  aliasedTable,
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  or,
+} from 'drizzle-orm';
 import type {
   Database,
   DatabaseExecutor,
@@ -8,9 +18,13 @@ import type {
 import {
   groupMembers,
   groups,
+  invites,
+  paymentRequests,
   users,
   walletAccounts,
 } from '../../database/schema/index.js';
+import { debtsOf, netDebts } from '../ledger.js';
+import { loadDebtTotals } from './drizzle-expenses.repository.js';
 import { rethrowUniqueViolation } from '../../database/unique-violation.js';
 import { UniqueViolationError } from '../../common/errors/unique-violation.error.js';
 import { shortAddress } from '../initials.js';
@@ -22,6 +36,7 @@ import {
   MAX_GROUPS_PER_USER,
   MAX_MEMBERS_PER_GROUP,
   type MemberRecord,
+  type RemoveMemberResult,
 } from './groups.repository.js';
 
 const groupColumns = {
@@ -52,7 +67,10 @@ export class DrizzleGroupsRepository extends GroupsRepository {
       })
       .from(groups)
       .innerJoin(me, and(eq(me.groupId, groups.id), eq(me.userId, userId)))
-      .innerJoin(groupMembers, eq(groupMembers.groupId, groups.id))
+      .innerJoin(
+        groupMembers,
+        and(eq(groupMembers.groupId, groups.id), isNull(groupMembers.leftAt)),
+      )
       .groupBy(groups.id, me.id)
       .orderBy(desc(groups.lastActivityAt), desc(groups.createdAt));
   }
@@ -140,7 +158,9 @@ export class DrizzleGroupsRepository extends GroupsRepository {
         displayName: groupMembers.displayName,
       })
       .from(groupMembers)
-      .where(eq(groupMembers.groupId, groupId))
+      .where(
+        and(eq(groupMembers.groupId, groupId), isNull(groupMembers.leftAt)),
+      )
       .orderBy(asc(groupMembers.createdAt), asc(groupMembers.id));
     const addresses = await this.addressesOf(
       rows.flatMap((row) => (row.userId ? [row.userId] : [])),
@@ -180,7 +200,9 @@ export class DrizzleGroupsRepository extends GroupsRepository {
         const [members] = await tx
           .select({ value: count() })
           .from(groupMembers)
-          .where(eq(groupMembers.groupId, groupId));
+          .where(
+            and(eq(groupMembers.groupId, groupId), isNull(groupMembers.leftAt)),
+          );
         if ((members?.value ?? 0) >= MAX_MEMBERS_PER_GROUP) {
           return { ok: false, reason: 'member-limit' } as const;
         }
@@ -205,6 +227,91 @@ export class DrizzleGroupsRepository extends GroupsRepository {
       }
       throw error;
     }
+  }
+
+  async removeMember(
+    groupId: string,
+    userId: string,
+    memberId: string,
+  ): Promise<RemoveMemberResult> {
+    return this.db.transaction(async (tx) => {
+      // Блокировка группы: пока проверяем долги, расходы в ней не появятся
+      const [me] = await tx
+        .select({ id: groupMembers.id })
+        .from(groups)
+        .innerJoin(
+          groupMembers,
+          and(
+            eq(groupMembers.groupId, groups.id),
+            eq(groupMembers.userId, userId),
+          ),
+        )
+        .where(eq(groups.id, groupId))
+        .for('update', { of: groups });
+      if (!me) {
+        return { ok: false, reason: 'not-member' } as const;
+      }
+      const [target] = await tx
+        .select({ id: groupMembers.id, userId: groupMembers.userId })
+        .from(groupMembers)
+        .where(
+          and(
+            eq(groupMembers.groupId, groupId),
+            eq(groupMembers.id, memberId),
+            isNull(groupMembers.leftAt),
+          ),
+        )
+        .for('update');
+      if (!target) {
+        return { ok: false, reason: 'not-found' } as const;
+      }
+      const leaving = target.id === me.id;
+      // Участника с кошельком нельзя выгнать: он выходит только сам
+      if (!leaving && target.userId) {
+        return { ok: false, reason: 'has-wallet' } as const;
+      }
+      const ledgers = await loadDebtTotals(tx, [groupId]);
+      const mine = debtsOf(
+        netDebts(ledgers.get(groupId)?.totals ?? []),
+        target.id,
+      );
+      if (mine.debts.length > 0) {
+        return { ok: false, reason: 'has-debts' } as const;
+      }
+
+      const now = new Date();
+      // user_id обнуляется: доступ к группе пропадает сразу, а повторно войти можно по ссылке
+      await tx
+        .update(groupMembers)
+        .set({ leftAt: now, userId: null })
+        .where(eq(groupMembers.id, target.id));
+      await tx
+        .update(paymentRequests)
+        .set({ replacedAt: now, cancelledAt: now })
+        .where(
+          and(
+            eq(paymentRequests.groupId, groupId),
+            or(
+              eq(paymentRequests.requesterMemberId, target.id),
+              eq(paymentRequests.debtorMemberId, target.id),
+            ),
+            isNull(paymentRequests.paidAt),
+            isNull(paymentRequests.replacedAt),
+          ),
+        );
+      await tx
+        .update(invites)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(invites.groupId, groupId),
+            eq(invites.claimMemberId, target.id),
+            isNull(invites.claimedAt),
+            isNull(invites.revokedAt),
+          ),
+        );
+      return { ok: true, left: leaving } as const;
+    });
   }
 
   /** Самый ранний Solana-кошелёк пользователя — на него приходят переводы */

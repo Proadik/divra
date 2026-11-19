@@ -58,6 +58,13 @@ export const paymentRequests = pgTable(
      * оплату, но если перевод по ней всё же придёт — он будет засчитан.
      */
     replacedAt: timestamp('replaced_at', { withTimezone: true }),
+    /**
+     * Отменён: получатель отозвал запрос, вышел из группы или долг закрыли наличными частично.
+     * Вместе с ним ставится replaced_at — запрос перестаёт быть действующим
+     */
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    /** Когда последний раз напоминали должнику: не чаще раза в сутки */
+    lastRemindedAt: timestamp('last_reminded_at', { withTimezone: true }),
   },
   (table) => [
     uniqueIndex('payment_requests_code_uq').on(table.code),
@@ -189,6 +196,9 @@ export const settlementTransfers = pgTable(
  * дважды — ни двумя запросами, ни запросом и расчётом сразу. В одной транзакции расчёта
  * несколько получателей — это несколько строк.
  */
+export const PAYMENT_METHODS = ['onchain', 'cash'] as const;
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+
 export const payments = pgTable(
   'payments',
   {
@@ -199,8 +209,20 @@ export const payments = pgTable(
     fromMemberId: uuid('from_member_id').notNull(),
     toMemberId: uuid('to_member_id').notNull(),
     amountCents: integer('amount_cents').notNull(),
-    token: varchar('token', { length: 4 }).$type<Stablecoin>().notNull(),
-    signature: varchar('signature', { length: 88 }).notNull(),
+    /**
+     * onchain — перевод найден в сети (есть token и signature).
+     * cash — получатель сам отметил, что получил деньги вне сети (token и signature — null)
+     */
+    method: varchar('method', { length: 8 })
+      .$type<PaymentMethod>()
+      .notNull()
+      .default('onchain'),
+    token: varchar('token', { length: 4 }).$type<Stablecoin>(),
+    signature: varchar('signature', { length: 88 }),
+    /** Кто записал наличные — только получатель (проверяет сервис) */
+    recordedBy: uuid('recorded_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     requestId: uuid('request_id').references(() => paymentRequests.id, {
       onDelete: 'set null',
     }),
@@ -231,7 +253,15 @@ export const payments = pgTable(
     }),
     index('payments_group_idx').on(table.groupId, table.createdAt),
     check('payments_amount_ck', sql`${table.amountCents} > 0`),
-    check('payments_token_ck', sql`${table.token} in ('USDC', 'USDT')`),
+    check(
+      'payments_token_ck',
+      sql`${table.token} is null or ${table.token} in ('USDC', 'USDT')`,
+    ),
+    check(
+      'payments_method_ck',
+      sql`(${table.method} = 'onchain' and ${table.signature} is not null and ${table.token} is not null)
+        or (${table.method} = 'cash' and ${table.signature} is null and ${table.token} is null)`,
+    ),
     check(
       'payments_members_ck',
       sql`${table.fromMemberId} <> ${table.toMemberId}`,

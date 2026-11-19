@@ -27,6 +27,13 @@ export type AddMemberResult =
   | { ok: true; member: MemberRecord }
   | { ok: false; reason: 'not-member' | 'member-limit' | 'duplicate-name' };
 
+export type RemoveMemberResult =
+  | { ok: true; left: boolean }
+  | {
+      ok: false;
+      reason: 'not-member' | 'not-found' | 'has-wallet' | 'has-debts';
+    };
+
 /** Сколько групп может быть у одного пользователя и участников в одной группе */
 export const MAX_GROUPS_PER_USER = 100;
 export const MAX_MEMBERS_PER_GROUP = 50;
@@ -48,6 +55,18 @@ export abstract class GroupsRepository {
     groupId: string,
     userId: string,
   ): Promise<{ group: GroupRecord; members: MemberRecord[] } | undefined>;
+
+  /**
+   * Выйти из группы (memberId — свой) или удалить участника без кошелька. Только если у него
+   * нет долгов ни перед кем и ему никто не должен. Строка участника остаётся с left_at:
+   * на неё ссылаются старые расходы. Его открытые запросы оплаты и персональные
+   * приглашения на него закрываются.
+   */
+  abstract removeMember(
+    groupId: string,
+    userId: string,
+    memberId: string,
+  ): Promise<RemoveMemberResult>;
 
   /** Участник по имени, без кошелька. Добавлять может любой участник группы */
   abstract addPendingMember(

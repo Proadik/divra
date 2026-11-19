@@ -13,6 +13,7 @@ import {
 } from './settlements/settlements.service.js';
 import { BalanceReader, RpcBalanceReader } from './solana/balance-reader.js';
 import {
+  CashPaymentsController,
   GroupPaymentRequestsController,
   PublicPaymentRequestsController,
 } from './payments.controller.js';
@@ -32,6 +33,7 @@ import {
 @Module({
   imports: [GroupsModule, UsersModule],
   controllers: [
+    CashPaymentsController,
     GroupPaymentRequestsController,
     PublicPaymentRequestsController,
     SettlementsController,
@@ -52,5 +54,6 @@ import {
     { provide: TransactionSender, useClass: RpcTransactionSender },
     { provide: BlockhashSource, useClass: RpcBlockhashSource },
   ],
+  exports: [PaymentLookup],
 })
 export class PaymentsModule {}

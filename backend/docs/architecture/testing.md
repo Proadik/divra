@@ -21,8 +21,10 @@ npm run typecheck && npm run lint
   - `FakePaymentLookup`: `transfers`, `confirmations`, `received`, `failing` — что «нашлось» в сети;
   - `FakeTransactionSender`: `sent`, `failWith`, `peekNext()` — что отправили и что ответит сеть;
   - `FakeBalanceReader` и фиксированный `BlockhashSource`;
+  - `FakeTransferStream`: `emit(tx)` — «из сети пришла транзакция», `watched` — на что подписан поток;
   - `SETTLEMENT_TIMING` с короткими интервалами.
-    Возвращает `{ app, db, chain, sender, payments, settlements }`.
+    Возвращает `{ app, db, chain, sender, payments, settlements, stream, watcher }`.
+- WebSocket-тесты: `app.listen(0)` и `socket.io-client` с `path: '/api/socket.io'`, `transports: ['websocket']`.
 - `test/wallet.ts` — `createTestWallet()`: тестовые ключи и подпись транзакции-вызова; `test/session.ts` — `signIn(app)`, полный вход
   через `/auth/wallet/*`.
 - `ORIGIN_HEADERS` — заголовки, которые требует `BrowserRequestGuard`; `freshIp()` — новый IP, чтобы не упереться
@@ -37,6 +39,9 @@ npm run typecheck && npm run lint
 | `invites.e2e-spec.ts`             | Общие и персональные приглашения, гонки, сроки                                                                                                           |
 | `payments.e2e-spec.ts`            | Запросы, замена, поиск оплаты, оплата со страницы, «Отправленные»                                                                                        |
 | `settlements.e2e-spec.ts`         | Сборка, отправка, частичный успех, повторная отправка, балансы                                                                                           |
+| `manage.e2e-spec.ts`              | Правка и удаление расходов, выход и удаление участника, отзыв ссылок, отмена и напоминание, наличные, профиль, удаление аккаунта                         |
+| `transfers.e2e-spec.ts`           | Переводы мимо Divra: подписка, сопоставление, «засчитать» с перепроверкой, WebSocket-события                                                             |
+| `history.e2e-spec.ts`             | «История»: источники, направление, засчитанные и ждущие решения, курсор без повторов, проверка запроса                                                   |
 
 ## Как писать новый тест
 

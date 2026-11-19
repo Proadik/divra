@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   HttpCode,
@@ -14,13 +15,17 @@ import {
 import { CurrentUser, Public } from '@nestjs/authentication';
 import { Throttle, minutes } from '@nestjs/throttler';
 import type {
+  CashPaymentResult,
+  PaymentReminder,
   PaymentRequestPreview,
   PaymentRequestView,
   SentPaymentRequest,
 } from './payment.interface.js';
 import { BrowserRequestGuard } from '../auth/browser-request.guard.js';
 import {
+  type CashPayment,
   type CreatePaymentRequests,
+  cashPaymentSchema,
   type PaymentTransactionRequest,
   type SubmitPayment,
   createPaymentRequestsSchema,
@@ -56,6 +61,46 @@ export class GroupPaymentRequestsController {
     @Param('groupId', groupIdPipe) groupId: string,
   ): Promise<SentPaymentRequest[]> {
     return this.payments.sent(groupId, userId);
+  }
+
+  /** Отменить свой открытый запрос: ссылка перестанет принимать оплату */
+  @Delete(':code')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ default: { limit: 30, ttl: minutes(1) } })
+  cancel(
+    @CurrentUser('id') userId: string,
+    @Param('groupId', groupIdPipe) groupId: string,
+    @Param('code') code: string,
+  ): Promise<void> {
+    return this.payments.cancel(groupId, code, userId);
+  }
+
+  /** Текст напоминания со ссылкой. Не чаще раза в сутки на запрос */
+  @Post(':code/remind')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 30, ttl: minutes(1) } })
+  remind(
+    @CurrentUser('id') userId: string,
+    @Param('groupId', groupIdPipe) groupId: string,
+    @Param('code') code: string,
+  ): Promise<PaymentReminder> {
+    return this.payments.remind(groupId, code, userId);
+  }
+}
+
+/** «Отдали наличными»: долг гасит сам получатель, без перевода в сети */
+@Controller('groups/:groupId/cash-payments')
+export class CashPaymentsController {
+  constructor(private readonly payments: PaymentsService) {}
+
+  @Post()
+  @Throttle({ default: { limit: 30, ttl: minutes(1) } })
+  create(
+    @CurrentUser('id') userId: string,
+    @Param('groupId', groupIdPipe) groupId: string,
+    @Body({ schema: cashPaymentSchema }) body: CashPayment,
+  ): Promise<CashPaymentResult> {
+    return this.payments.recordCash(groupId, userId, body);
   }
 }
 

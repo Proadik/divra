@@ -1,6 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDrizzle } from '@nestjs/drizzle';
-import { aliasedTable, and, count, eq, isNull, sql } from 'drizzle-orm';
+import {
+  aliasedTable,
+  and,
+  asc,
+  count,
+  eq,
+  gt,
+  isNull,
+  sql,
+} from 'drizzle-orm';
 import type { Database } from '../database/database.module.js';
 import {
   groupMembers,
@@ -9,7 +18,7 @@ import {
   users,
   walletAccounts,
 } from '../database/schema/index.js';
-import { shortAddress } from '../groups/initials.js';
+import { freeName, shortAddress } from '../groups/initials.js';
 import {
   MAX_GROUPS_PER_USER,
   MAX_MEMBERS_PER_GROUP,
@@ -27,7 +36,16 @@ export interface InvitePreviewRecord extends InviteRecord {
   inviterName: string;
   claimMemberName: string | null;
   claimedAt: Date | null;
+  revokedAt: Date | null;
   membersCount: number;
+}
+
+/** Действующее приглашение в списке группы */
+export interface ActiveInviteRecord extends InviteRecord {
+  inviterName: string;
+  claimMemberName: string | null;
+  uses: number;
+  createdAt: Date;
 }
 
 export type CreateInviteResult =
@@ -39,7 +57,12 @@ export type AcceptInviteResult =
   | {
       ok: false;
       reason:
-        'not-found' | 'expired' | 'claimed' | 'member-limit' | 'group-limit';
+        | 'not-found'
+        | 'expired'
+        | 'claimed'
+        | 'revoked'
+        | 'member-limit'
+        | 'group-limit';
     };
 
 const inviteColumns = {
@@ -47,17 +70,6 @@ const inviteColumns = {
   groupId: invites.groupId,
   claimMemberId: invites.claimMemberId,
   expiresAt: invites.expiresAt,
-};
-
-/** Имя, которого ещё нет в группе: «Ccrt…KY47», при совпадении — «Ccrt…KY47 2» */
-const freeName = (base: string, taken: ReadonlySet<string>): string => {
-  for (let index = 1; index < 100; index += 1) {
-    const candidate = index === 1 ? base : `${base.slice(0, 28)} ${index}`;
-    if (!taken.has(candidate.toLowerCase())) {
-      return candidate;
-    }
-  }
-  return `${base.slice(0, 22)} ${Date.now() % 1_000_000}`;
 };
 
 @Injectable()
@@ -94,6 +106,7 @@ export class InvitesRepository {
               eq(groupMembers.id, input.claimMemberId),
               eq(groupMembers.groupId, input.groupId),
               isNull(groupMembers.userId),
+              isNull(groupMembers.leftAt),
             ),
           );
         if (!claim) {
@@ -125,11 +138,12 @@ export class InvitesRepository {
       .select({
         ...inviteColumns,
         claimedAt: invites.claimedAt,
+        revokedAt: invites.revokedAt,
         groupName: groups.name,
         inviterName: inviter.displayName,
         claimMemberName: claim.displayName,
         membersCount:
-          sql<number>`(select count(*) from ${groupMembers} where ${groupMembers.groupId} = ${invites.groupId})`.mapWith(
+          sql<number>`(select count(*) from ${groupMembers} where ${groupMembers.groupId} = ${invites.groupId} and ${groupMembers.leftAt} is null)`.mapWith(
             Number,
           ),
       })
@@ -158,6 +172,7 @@ export class InvitesRepository {
           claimMemberId: invites.claimMemberId,
           expiresAt: invites.expiresAt,
           claimedAt: invites.claimedAt,
+          revokedAt: invites.revokedAt,
         })
         .from(invites)
         .where(eq(invites.code, code))
@@ -188,6 +203,9 @@ export class InvitesRepository {
           memberId: existing.id,
           alreadyMember: true,
         } as const;
+      }
+      if (invite.revokedAt) {
+        return { ok: false, reason: 'revoked' } as const;
       }
       if (invite.expiresAt <= now) {
         return { ok: false, reason: 'expired' } as const;
@@ -223,6 +241,7 @@ export class InvitesRepository {
               eq(groupMembers.id, invite.claimMemberId),
               eq(groupMembers.groupId, invite.groupId),
               isNull(groupMembers.userId),
+              isNull(groupMembers.leftAt),
             ),
           )
           .returning({ id: groupMembers.id });
@@ -238,7 +257,12 @@ export class InvitesRepository {
         const names = await tx
           .select({ name: groupMembers.displayName })
           .from(groupMembers)
-          .where(eq(groupMembers.groupId, invite.groupId));
+          .where(
+            and(
+              eq(groupMembers.groupId, invite.groupId),
+              isNull(groupMembers.leftAt),
+            ),
+          );
         if (names.length >= MAX_MEMBERS_PER_GROUP) {
           return { ok: false, reason: 'member-limit' } as const;
         }
@@ -284,5 +308,78 @@ export class InvitesRepository {
         alreadyMember: false,
       } as const;
     });
+  }
+
+  /** Действующие приглашения группы — если userId в ней состоит. Иначе undefined */
+  async listActive(
+    groupId: string,
+    userId: string,
+    now: Date,
+  ): Promise<ActiveInviteRecord[] | undefined> {
+    const [membership] = await this.db
+      .select({ id: groupMembers.id })
+      .from(groupMembers)
+      .where(
+        and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId)),
+      );
+    if (!membership) {
+      return undefined;
+    }
+    const inviter = aliasedTable(groupMembers, 'inviter');
+    const claim = aliasedTable(groupMembers, 'claim');
+    return this.db
+      .select({
+        ...inviteColumns,
+        inviterName: inviter.displayName,
+        claimMemberName: claim.displayName,
+        uses: invites.uses,
+        createdAt: invites.createdAt,
+      })
+      .from(invites)
+      .innerJoin(inviter, eq(inviter.id, invites.inviterMemberId))
+      .leftJoin(claim, eq(claim.id, invites.claimMemberId))
+      .where(
+        and(
+          eq(invites.groupId, groupId),
+          gt(invites.expiresAt, now),
+          isNull(invites.revokedAt),
+          isNull(invites.claimedAt),
+        ),
+      )
+      .orderBy(asc(invites.createdAt))
+      .limit(50);
+  }
+
+  /**
+   * Отозвать приглашение. Может любой участник группы: отзыв только закрывает доступ.
+   * false — группы нет, userId в ней не состоит или такого действующего приглашения нет.
+   */
+  async revoke(
+    groupId: string,
+    code: string,
+    userId: string,
+    now: Date,
+  ): Promise<boolean> {
+    const [membership] = await this.db
+      .select({ id: groupMembers.id })
+      .from(groupMembers)
+      .where(
+        and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId)),
+      );
+    if (!membership) {
+      return false;
+    }
+    const revoked = await this.db
+      .update(invites)
+      .set({ revokedAt: now })
+      .where(
+        and(
+          eq(invites.groupId, groupId),
+          eq(invites.code, code),
+          isNull(invites.revokedAt),
+        ),
+      )
+      .returning({ id: invites.id });
+    return revoked.length > 0;
   }
 }

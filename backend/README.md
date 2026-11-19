@@ -21,6 +21,8 @@ API для Divra: группы, расходы, долги и их погаше�
 
 ## Быстрый старт
 
+Для потока переводов (необязательно) — ключ [Helius](https://dashboard.helius.dev) в `HELIUS_API_KEY`.
+
 Нужны Node.js ≥ 22.12 (фронту нужен 24, так что удобно взять 24) и PostgreSQL 17 (или Docker).
 
 ```bash
@@ -50,21 +52,24 @@ Tether нет devnet-токена, поэтому USDT проверяется т
 
 Описание — [`.env.example`](.env.example), проверка при старте — [`src/config/config.ts`](src/config/config.ts) (zod).
 
-| Переменная                                | По умолчанию             | Что задаёт                                                                    |
-| ----------------------------------------- | ------------------------ | ----------------------------------------------------------------------------- |
-| `NODE_ENV`, `PORT`                        | `development`, `3000`    | Режим и порт                                                                  |
-| `DATABASE_URL`                            | локальный `divra`        | PostgreSQL                                                                    |
-| `JWT_SECRET`                              | —                        | Ключ HS256, от 32 байт. В production пример из `.env.example` не принимается  |
-| `JWT_ISSUER`, `JWT_AUDIENCE`              | `divra-api`, `divra-web` | Claims `iss` и `aud`                                                          |
-| `ACCESS_TOKEN_TTL`                        | `15m`                    | Жизнь access-токена (отозвать раньше нельзя, поэтому коротко)                 |
-| `REFRESH_TOKEN_TTL`, `REFRESH_FAMILY_TTL` | `7d`, `30d`              | Жизнь refresh-токена и всей цепочки ротаций                                   |
-| `APP_ORIGIN`                              | `http://localhost:5173`  | Фронтенд: CORS, проверка `Origin`, домен в сообщении для подписи, ссылки      |
-| `COOKIE_SECURE`                           | `false`                  | `false` — только для http://localhost; в production cookie всегда `Secure`    |
-| `TRUST_PROXY`                             | `0`                      | Сколько прокси перед приложением (для IP в лимитах)                           |
-| `SOLANA_CLUSTER`                          | `devnet`                 | `devnet`, `testnet` или `mainnet-beta`                                        |
-| `SOLANA_RPC_URL`                          | пусто — публичный RPC    | Свой RPC (для mainnet обязательно: публичный режет лимиты)                    |
-| `CHALLENGE_TTL_SECONDS`                   | `300`                    | Сколько живёт вызов на подпись                                                |
-| `PAYMENT_WATCH_INTERVAL_MS`               | `20000`                  | Как часто искать оплату открытых запросов; `0` — только при открытии страницы |
+| Переменная                                | По умолчанию             | Что задаёт                                                                         |
+| ----------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------- |
+| `NODE_ENV`, `PORT`                        | `development`, `3000`    | Режим и порт                                                                       |
+| `DATABASE_URL`                            | локальный `divra`        | PostgreSQL                                                                         |
+| `JWT_SECRET`                              | —                        | Ключ HS256, от 32 байт. В production пример из `.env.example` не принимается       |
+| `JWT_ISSUER`, `JWT_AUDIENCE`              | `divra-api`, `divra-web` | Claims `iss` и `aud`                                                               |
+| `ACCESS_TOKEN_TTL`                        | `15m`                    | Жизнь access-токена (отозвать раньше нельзя, поэтому коротко)                      |
+| `REFRESH_TOKEN_TTL`, `REFRESH_FAMILY_TTL` | `7d`, `30d`              | Жизнь refresh-токена и всей цепочки ротаций                                        |
+| `APP_ORIGIN`                              | `http://localhost:5173`  | Фронтенд: CORS, проверка `Origin`, домен в сообщении для подписи, ссылки           |
+| `COOKIE_SECURE`                           | `false`                  | `false` — только для http://localhost; в production cookie всегда `Secure`         |
+| `TRUST_PROXY`                             | `0`                      | Сколько прокси перед приложением (для IP в лимитах)                                |
+| `SOLANA_CLUSTER`                          | `devnet`                 | `devnet`, `testnet` или `mainnet-beta`                                             |
+| `SOLANA_RPC_URL`                          | пусто — публичный RPC    | Свой RPC (для mainnet обязательно: публичный режет лимиты)                         |
+| `CHALLENGE_TTL_SECONDS`                   | `300`                    | Сколько живёт вызов на подпись                                                     |
+| `PAYMENT_WATCH_INTERVAL_MS`               | `20000`                  | Как часто искать оплату открытых запросов; `0` — только при открытии страницы      |
+| `HELIUS_API_KEY`                          | пусто — выключено        | Ключ Helius для потока LaserStream: замечать переводы между участниками мимо Divra |
+| `LASERSTREAM_ENDPOINT`                    | по `SOLANA_CLUSTER`      | Адрес LaserStream (devnet — `laserstream-devnet-ewr`)                              |
+| `TRANSFER_LOG_ALL`                        | `false`                  | Отладка: писать в лог все переводы USDC/USDT в сети (только devnet)                |
 
 Новая переменная добавляется в три места: zod-схему `src/config/config.ts`, `.env.example` и эту таблицу.
 
@@ -73,30 +78,46 @@ Tether нет devnet-токена, поэтому USDT проверяется т
 Всё, что не помечено `@Public()`, требует `Authorization: Bearer <access-token>`: guard `@nestjs/authentication`
 глобальный. Ошибки приходят в одном формате: `{ statusCode, error, message, timestamp, path }`.
 
-| Метод | Путь                                      | Доступ                        | Что делает                                                            |
-| ----- | ----------------------------------------- | ----------------------------- | --------------------------------------------------------------------- |
-| POST  | `/api/auth/wallet/challenge`              | публичный                     | Вызов на подпись: memo-транзакция с доменом, адресом, nonce и сроком  |
-| POST  | `/api/auth/wallet/verify`                 | публичный, только с фронтенда | Проверка подписи → вход; access-токен в ответе, refresh в cookie      |
-| POST  | `/api/auth/refresh`                       | cookie                        | Ротация refresh-токена, новый access-токен                            |
-| POST  | `/api/auth/sign-out`                      | cookie                        | Отзыв refresh-токена этого устройства                                 |
-| GET   | `/api/me`                                 | JWT                           | Профиль и кошельки                                                    |
-| GET   | `/api/me/overview`                        | JWT                           | Главная: «тебе должны / ты должен», группы с балансом, «Недавнее»     |
-| POST  | `/api/groups`                             | JWT                           | Новая группа, создатель — первый участник                             |
-| GET   | `/api/groups/:id/overview`                | участник группы               | Участники, баланс, долги после зачёта, расходы                        |
-| POST  | `/api/groups/:id/members`                 | участник группы               | Участник по имени, без кошелька                                       |
-| POST  | `/api/groups/:id/expenses`                | участник группы               | Расход: плательщик, доли, исходная валюта и курс                      |
-| POST  | `/api/groups/:id/invites`                 | участник группы               | Приглашение: общее или персональное (`claimMemberId`)                 |
-| GET   | `/api/invites/:code`                      | публичный                     | Превью приглашения до входа                                           |
-| POST  | `/api/invites/:code/accept`               | JWT                           | Вступить в группу                                                     |
-| POST  | `/api/groups/:id/payment-requests`        | участник группы               | «Запросить»: ссылка Solana Pay на каждого должника                    |
-| GET   | `/api/groups/:id/payment-requests`        | участник группы               | «Отправленные»: статус (ждёт / оплачен / истёк), ссылка; последние 50 |
-| GET   | `/api/payment-requests/:code`             | публичный                     | Страница запроса для плательщика; заодно ищет оплату в сети           |
-| POST  | `/api/payment-requests/:code/transaction` | публичный, только с фронтенда | Собрать перевод для кошелька плательщика (`{ account }`)              |
-| POST  | `/api/payment-requests/:code/submit`      | публичный, только с фронтенда | Отправить подписанный перевод в сеть                                  |
-| POST  | `/api/groups/:id/settlements`             | участник группы               | «Рассчитаться»: собрать одну транзакцию с переводами выбранным        |
-| POST  | `/api/groups/:id/settlements/:sid/submit` | тот, кто собрал               | Отправить подписанную транзакцию, дождаться и сверить в сети          |
-| GET   | `/api/wallets/:address/balances`          | JWT, только свой кошелёк      | Балансы USDC/USDT                                                     |
-| GET   | `/api/health`                             | публичный                     | Проверка живости                                                      |
+| Метод  | Путь                                            | Доступ                        | Что делает                                                            |
+| ------ | ----------------------------------------------- | ----------------------------- | --------------------------------------------------------------------- |
+| POST   | `/api/auth/wallet/challenge`                    | публичный                     | Вызов на подпись: memo-транзакция с доменом, адресом, nonce и сроком  |
+| POST   | `/api/auth/wallet/verify`                       | публичный, только с фронтенда | Проверка подписи → вход; access-токен в ответе, refresh в cookie      |
+| POST   | `/api/auth/refresh`                             | cookie                        | Ротация refresh-токена, новый access-токен                            |
+| POST   | `/api/auth/sign-out`                            | cookie                        | Отзыв refresh-токена этого устройства                                 |
+| GET    | `/api/me`                                       | JWT                           | Профиль и кошельки                                                    |
+| PATCH  | `/api/me`                                       | JWT                           | Имя профиля; заменяет имя по умолчанию в группах                      |
+| DELETE | `/api/me`                                       | JWT, только с фронтенда       | Удалить аккаунт: кошельки и сессии; в группах — участник без кошелька |
+| GET    | `/api/me/overview`                              | JWT                           | Главная: «тебе должны / ты должен», группы с балансом, «Недавнее»     |
+| POST   | `/api/groups`                                   | JWT                           | Новая группа, создатель — первый участник                             |
+| GET    | `/api/groups/:id/overview`                      | участник группы               | Участники, баланс, долги после зачёта, расходы                        |
+| POST   | `/api/groups/:id/members`                       | участник группы               | Участник по имени, без кошелька                                       |
+| DELETE | `/api/groups/:id/members/:memberId`             | участник группы               | Выйти (свой id) или удалить участника без кошелька; только без долгов |
+| POST   | `/api/groups/:id/expenses`                      | участник группы               | Расход: плательщик, доли, исходная валюта и курс                      |
+| GET    | `/api/groups/:id/expenses/:expenseId`           | участник группы               | Расход с долями — для формы правки                                    |
+| PUT    | `/api/groups/:id/expenses/:expenseId`           | автор или плательщик          | Заменить расход целиком                                               |
+| DELETE | `/api/groups/:id/expenses/:expenseId`           | автор или плательщик          | Удалить расход                                                        |
+| POST   | `/api/groups/:id/invites`                       | участник группы               | Приглашение: общее или персональное (`claimMemberId`)                 |
+| GET    | `/api/groups/:id/invites`                       | участник группы               | Действующие ссылки группы                                             |
+| DELETE | `/api/groups/:id/invites/:code`                 | участник группы               | Отозвать ссылку: превью и вход ответят 410                            |
+| GET    | `/api/invites/:code`                            | публичный                     | Превью приглашения до входа                                           |
+| POST   | `/api/invites/:code/accept`                     | JWT                           | Вступить в группу                                                     |
+| POST   | `/api/groups/:id/payment-requests`              | участник группы               | «Запросить»: ссылка Solana Pay на каждого должника                    |
+| GET    | `/api/groups/:id/payment-requests`              | участник группы               | «Отправленные»: статус (ждёт / оплачен / истёк), ссылка; последние 50 |
+| DELETE | `/api/groups/:id/payment-requests/:code`        | тот, кто запросил             | Отменить открытый запрос                                              |
+| POST   | `/api/groups/:id/payment-requests/:code/remind` | тот, кто запросил             | Текст напоминания со ссылкой; не чаще раза в сутки                    |
+| POST   | `/api/groups/:id/cash-payments`                 | тот, кому должны              | «Вернули наличными»: уменьшить долг участника                         |
+| GET    | `/api/payment-requests/:code`                   | публичный                     | Страница запроса для плательщика; заодно ищет оплату в сети           |
+| POST   | `/api/payment-requests/:code/transaction`       | публичный, только с фронтенда | Собрать перевод для кошелька плательщика (`{ account }`)              |
+| POST   | `/api/payment-requests/:code/submit`            | публичный, только с фронтенда | Отправить подписанный перевод в сеть                                  |
+| POST   | `/api/groups/:id/settlements`                   | участник группы               | «Рассчитаться»: собрать одну транзакцию с переводами выбранным        |
+| POST   | `/api/groups/:id/settlements/:sid/submit`       | тот, кто собрал               | Отправить подписанную транзакцию, дождаться и сверить в сети          |
+| GET    | `/api/wallets/:address/balances`                | JWT, только свой кошелёк      | Балансы USDC/USDT                                                     |
+| GET    | `/api/me/detected-transfers`                    | JWT                           | Переводы мимо Divra, которые можно засчитать                          |
+| POST   | `/api/detected-transfers/:id/apply`             | получатель                    | Засчитать перевод как возврат долга в группе                          |
+| POST   | `/api/detected-transfers/:id/dismiss`           | получатель                    | «Это не за долг»                                                      |
+| GET    | `/api/me/history?cursor=&limit=`                | JWT                           | «История»: переводы в сети с твоим участием, страницами по курсору    |
+| WS     | `/api/socket.io`                                | JWT в handshake               | События: `group.changed`, `transfer.detected`                         |
+| GET    | `/api/health`                                   | публичный                     | Проверка живости                                                      |
 
 «Только с фронтенда» — `BrowserRequestGuard`: заголовок `X-Divra-Client: web` и свой `Origin`. Форматы тел и
 ответов — zod-схемы в `src/**/*.schemas.ts`; фронтенд проверяет ответы своими схемами в
@@ -107,16 +128,17 @@ Tether нет devnet-токена, поэтому USDT проверяется т
 Сначала прочитай [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): там стек, модули, жизненный цикл запроса, модель
 данных и **журнал решений**. Любое архитектурное решение записывается туда строкой с причиной и ссылкой на подробности.
 
-| Документ                                                                        | О чём                                                                |
-| ------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md)                                         | Точка входа: стек, модули, модель данных, журнал решений             |
-| [architecture/auth-and-security.md](docs/architecture/auth-and-security.md)     | Вход по подписи, JWT и refresh, CSRF/CORS, лимиты, заголовки, конфиг |
-| [architecture/groups-and-expenses.md](docs/architecture/groups-and-expenses.md) | Группы, участники, расходы, как считаются долги                      |
-| [architecture/invites.md](docs/architecture/invites.md)                         | Общие и персональные приглашения                                     |
-| [architecture/payments.md](docs/architecture/payments.md)                       | «Запросить», оплата со страницы, «Рассчитаться», сверка в сети       |
-| [architecture/database.md](docs/architecture/database.md)                       | Таблицы, ключи и индексы, миграции                                   |
-| [architecture/testing.md](docs/architecture/testing.md)                         | Юнит и e2e, PGlite, подмена сети Solana, как писать тест             |
-| [../frontend/README.md](../frontend/README.md)                                  | Веб-приложение: экраны, кошельки, валюты, мок                        |
+| Документ                                                                          | О чём                                                                |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md)                                           | Точка входа: стек, модули, модель данных, журнал решений             |
+| [architecture/auth-and-security.md](docs/architecture/auth-and-security.md)       | Вход по подписи, JWT и refresh, CSRF/CORS, лимиты, заголовки, конфиг |
+| [architecture/groups-and-expenses.md](docs/architecture/groups-and-expenses.md)   | Группы, участники, расходы, как считаются долги                      |
+| [architecture/invites.md](docs/architecture/invites.md)                           | Общие и персональные приглашения                                     |
+| [architecture/payments.md](docs/architecture/payments.md)                         | «Запросить», оплата со страницы, «Рассчитаться», сверка в сети       |
+| [architecture/database.md](docs/architecture/database.md)                         | Таблицы, ключи и индексы, миграции                                   |
+| [architecture/transfers-and-events.md](docs/architecture/transfers-and-events.md) | Переводы мимо Divra (LaserStream gRPC) и WebSocket-события           |
+| [architecture/testing.md](docs/architecture/testing.md)                           | Юнит и e2e, PGlite, подмена сети Solana, как писать тест             |
+| [../frontend/README.md](../frontend/README.md)                                    | Веб-приложение: экраны, кошельки, валюты, мок                        |
 
 ## Сети и монеты
 
@@ -154,6 +176,8 @@ backend/
 │   ├── users/                  пользователи и кошельки, /me
 │   ├── groups/                 группы, участники, расходы, журнал долгов, /me/overview
 │   ├── invites/                приглашения
+│   ├── events/                 шина событий и WebSocket-шлюз (socket.io) для фронтенда
+│   ├── transfers/              переводы мимо Divra: поток LaserStream, подсказки, «засчитать»
 │   ├── payments/               запросы оплаты, оплата со страницы, фоновый поиск
 │   │   ├── settlements/        «Рассчитаться», балансы
 │   │   └── solana/             поиск и отправка транзакций, сборка переводов, монеты
@@ -239,9 +263,8 @@ e2e поднимают настоящее приложение с настоящ
 ## Чего пока нет
 
 - Досрочного отзыва access-токенов (живут до 15 минут, поэтому короткие).
-- Удаления аккаунта (нужен `TokenService.revokeAll()`: токены не связаны с `users` внешним ключом).
 - Чистки `refresh_token_family_revocations` по сроку.
-- Отзыва приглашения и запроса оплаты вручную.
-- Напоминаний должнику.
+- Автоматических напоминаний и своих уведомлений (email, push, бот): «Напомнить» отдаёт текст,
+  отправляет его сам пользователь. Поле `remindInDays` пока только хранится.
 - Курсов на сервере (`/rates`): сейчас сервер проверяет только согласованность суммы и курса из клиента.
-- Фонового поиска оплат в нескольких репликах (нужен advisory lock или отдельный воркер).
+- Фонового поиска оплат и потока переводов в нескольких репликах (нужен advisory lock или отдельный воркер).

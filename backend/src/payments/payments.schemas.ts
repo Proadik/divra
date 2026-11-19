@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { STABLECOINS } from '../database/schema/index.js';
 import { optionalText } from '../groups/groups.schemas.js';
 import { MAX_MEMBERS_PER_GROUP } from '../groups/repositories/groups.repository.js';
+import { cents } from './settlements/settlements.schemas.js';
 
 export const createPaymentRequestsSchema = z.strictObject({
   token: z.enum(STABLECOINS),
@@ -49,3 +50,11 @@ export type SubmitPayment = z.infer<typeof submitPaymentSchema>;
 export const PAYMENT_CODE = /^[\w-]{22}$/;
 
 export type CreatePaymentRequests = z.infer<typeof createPaymentRequestsSchema>;
+
+/** Получатель отмечает, что участник вернул долг наличными */
+export const cashPaymentSchema = z.strictObject({
+  memberId: z.uuid(),
+  amount: cents,
+});
+
+export type CashPayment = z.infer<typeof cashPaymentSchema>;

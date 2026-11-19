@@ -66,6 +66,8 @@ export const expenses = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+    /** Последняя правка; null — не правили */
+    updatedAt: timestamp('updated_at', { withTimezone: true }),
   },
   (table) => [
     unique('expenses_group_id_uq').on(table.groupId, table.id),

@@ -23,6 +23,12 @@ import { SETTLEMENT_TIMING } from '../src/payments/settlements/settlements.servi
 import { PaymentsService } from '../src/payments/payments.service.js';
 import { SettlementsService } from '../src/payments/settlements/settlements.service.js';
 import { TransactionSender } from '../src/payments/solana/transaction-sender.js';
+import {
+  type ObservedTransaction,
+  type TransactionHandler,
+  TransferStream,
+} from '../src/transfers/stream/transfer-stream.js';
+import { TransferWatcher } from '../src/transfers/transfer-watcher.js';
 
 /** Отправка в «сеть» для тестов: запоминает транзакции, подпись — фиктивная */
 export class FakeTransactionSender extends TransactionSender {
@@ -80,6 +86,37 @@ export class FakeBalanceReader extends BalanceReader {
   }
 }
 
+/** Поток переводов без сети: тест сам «присылает» транзакции */
+export class FakeTransferStream extends TransferStream {
+  readonly enabled = true;
+  watched: readonly string[] = [];
+  fromSlot: number | null = null;
+  private handler: TransactionHandler | null = null;
+
+  start(handler: TransactionHandler, fromSlot: number | null): Promise<void> {
+    this.handler = handler;
+    this.fromSlot = fromSlot;
+    return Promise.resolve();
+  }
+
+  watch(accounts: readonly string[]): Promise<void> {
+    this.watched = accounts;
+    return Promise.resolve();
+  }
+
+  stop(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /** Транзакция «пришла» из сети */
+  async emit(tx: ObservedTransaction): Promise<void> {
+    if (!this.handler) {
+      throw new Error('Поток не запущен');
+    }
+    await this.handler(tx);
+  }
+}
+
 /** Похож на настоящий blockhash (32 байта в base58) — в сеть тесты не ходят */
 export const FAKE_BLOCKHASH = getAddressDecoder().decode(
   randomBytes(32),
@@ -101,10 +138,13 @@ export const createTestApp = async (): Promise<{
   sender: FakeTransactionSender;
   payments: PaymentsService;
   settlements: SettlementsService;
+  stream: FakeTransferStream;
+  watcher: TransferWatcher;
 }> => {
   const db = await createTestDatabase();
   const chain = new FakePaymentLookup();
   const sender = new FakeTransactionSender();
+  const stream = new FakeTransferStream();
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(getDrizzleToken())
     .useValue(db)
@@ -114,6 +154,8 @@ export const createTestApp = async (): Promise<{
     .useValue(chain)
     .overrideProvider(TransactionSender)
     .useValue(sender)
+    .overrideProvider(TransferStream)
+    .useValue(stream)
     .overrideProvider(BalanceReader)
     .useValue(new FakeBalanceReader())
     // Подтверждение ждём недолго: в тестах сеть «отвечает» сразу
@@ -132,6 +174,8 @@ export const createTestApp = async (): Promise<{
     sender,
     payments: app.get(PaymentsService),
     settlements: app.get(SettlementsService),
+    stream,
+    watcher: app.get(TransferWatcher),
   };
 };
 

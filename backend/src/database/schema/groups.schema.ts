@@ -73,6 +73,11 @@ export const groupMembers = pgTable(
      * при удалении аккаунта user_id обнуляется, а дата остаётся историей
      */
     joinedAt: timestamp('joined_at', { withTimezone: true }),
+    /**
+     * Вышел или удалён из группы. Строка остаётся: на неё ссылаются старые расходы и переводы.
+     * Уйти можно только без долгов, поэтому на журнал это не влияет
+     */
+    leftAt: timestamp('left_at', { withTimezone: true }),
   },
   (table) => [
     // Цель составных внешних ключей расходов: участник обязательно из той же группы
@@ -81,11 +86,11 @@ export const groupMembers = pgTable(
     uniqueIndex('group_members_group_user_uq')
       .on(table.groupId, table.userId)
       .where(sql`${table.userId} is not null`),
-    // Два «Ержана» в одной группе не различить ни в расходах, ни в долгах
-    uniqueIndex('group_members_group_name_uq').on(
-      table.groupId,
-      sql`lower(${table.displayName})`,
-    ),
+    // Два «Ержана» в одной группе не различить ни в расходах, ни в долгах.
+    // Имя ушедшего освобождается
+    uniqueIndex('group_members_group_name_uq')
+      .on(table.groupId, sql`lower(${table.displayName})`)
+      .where(sql`${table.leftAt} is null`),
     index('group_members_user_idx').on(table.userId),
     check(
       'group_members_name_ck',

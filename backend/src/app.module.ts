@@ -7,9 +7,11 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { APP_CONFIG, type AppConfig } from './config/config.js';
 import { ConfigModule } from './config/config.module.js';
 import { DatabaseModule } from './database/database.module.js';
+import { EventsModule } from './events/events.module.js';
 import { GroupsModule } from './groups/groups.module.js';
 import { InvitesModule } from './invites/invites.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
+import { TransfersModule } from './transfers/transfers.module.js';
 import { HealthController } from './health/health.controller.js';
 import { UsersModule } from './users/users.module.js';
 
@@ -39,11 +41,13 @@ import { UsersModule } from './users/users.module.js';
         },
       }),
     }),
+    EventsModule,
     UsersModule,
     AuthModule,
     GroupsModule,
     PaymentsModule,
     InvitesModule,
+    TransfersModule,
   ],
   controllers: [HealthController],
   providers: [

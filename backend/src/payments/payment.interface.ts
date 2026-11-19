@@ -17,8 +17,26 @@ export interface SentPaymentRequest extends PaymentRequestView {
   createdAt: string;
   expiresAt: string;
   paidAt: string | null;
-  /** Транзакция, которой запрос оплачен — для ссылки в обозреватель */
+  /** Транзакция, которой запрос оплачен — для ссылки в обозреватель; наличными — null */
   signature: string | null;
+  /** Когда последний раз напоминали; следующее напоминание — не раньше чем через сутки */
+  remindedAt: string | null;
+}
+
+/** Готовое напоминание: текст со ссылкой, его отправляют сами (Telegram, WhatsApp) */
+export interface PaymentReminder {
+  code: string;
+  text: string;
+  url: string;
+  remindedAt: string;
+  nextReminderAt: string;
+}
+
+export interface CashPaymentResult {
+  memberId: string;
+  amount: number;
+  /** Сколько ещё должен после этой записи */
+  remaining: number;
 }
 
 /** Публичная страница запроса: её открывают по ссылке, без входа */
