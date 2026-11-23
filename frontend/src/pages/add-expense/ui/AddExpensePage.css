@@ -387,3 +387,16 @@
 .sp-field:has(.add-expense__select:focus-visible) .sp-field__label {
   color: var(--accent);
 }
+
+.add-expense__status {
+  padding: var(--space-6) 0;
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 15px;
+}
+
+.add-expense__modal-text {
+  color: var(--ink-muted);
+  font-size: 15px;
+  line-height: 21px;
+}

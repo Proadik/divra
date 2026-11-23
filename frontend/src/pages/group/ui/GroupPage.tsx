@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ReactElement } from 'react'
 import { useNavigate, useParams } from 'react-router'
+import { DetectedTransfers } from '@/features/detected-transfers'
 import { useMoney } from '@/entities/currency'
 import { getGroupOverview, groupKeys } from '@/shared/api'
 import { addExpensePath, requestPath, settlePath } from '@/shared/config'
@@ -71,6 +72,7 @@ export const GroupPage = (): ReactElement => {
         </Button>
       </BalanceCard>
 
+      <DetectedTransfers groupId={data.id} />
       <DebtsSection group={data} money={money} />
       <ExpensesSection group={data} money={money} />
 

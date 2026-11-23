@@ -4,8 +4,11 @@ import { Icon, type IconName } from '../icon'
 import './button.css'
 
 export type ButtonProps = ComponentProps<'button'> & {
-  /** primary — один раз на экран; secondary — на светлом фоне; inverse — на surface-inverse; ghost — текстовое действие */
-  variant?: 'primary' | 'secondary' | 'inverse' | 'ghost'
+  /**
+   * primary — один раз на экран; secondary — на светлом фоне; inverse — на surface-inverse;
+   * ghost — текстовое действие; danger — необратимое действие (удалить, выйти)
+   */
+  variant?: 'primary' | 'secondary' | 'inverse' | 'ghost' | 'danger'
   /** md — 48px внутри карточек, lg — 56px для нижнего CTA */
   size?: 'md' | 'lg'
   block?: boolean

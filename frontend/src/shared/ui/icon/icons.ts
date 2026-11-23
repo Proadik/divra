@@ -5,6 +5,7 @@ export const ICONS = {
   check: ['M5 12l5 5L20 7'],
   'chevron-down': ['M6 9l6 6 6-6'],
   'arrow-up-right': ['M7 17L17 7M8 7h9v9'],
+  'arrow-down-left': ['M17 7L7 17M16 17H7V8'],
   'receipt-scan': [
     'M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2',
     'M7 9h10M7 13h10M7 17h6',
@@ -56,6 +57,15 @@ export const ICONS = {
   ],
   ticket: ['M4 6h16v4a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4z', 'M14 6v2M14 11v2M14 16v2'],
   more: ['M5 12h.01M12 12h.01M19 12h.01'],
+  trash: [
+    'M4 7h16',
+    'M10 11v6M14 11v6',
+    'M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13',
+    'M9 7V4h6v3',
+  ],
+  logout: ['M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4', 'M10 17l-5-5 5-5', 'M5 12h11'],
+  cash: ['M3 7h18v10H3z', 'M12 9.5a2.5 2.5 0 1 1 0 5a2.5 2.5 0 1 1 0-5z', 'M6 10v.01M18 14v.01'],
+  share: ['M12 3v12', 'M8 7l4-4 4 4', 'M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7'],
 } as const satisfies Record<string, readonly string[]>
 
 export type IconName = keyof typeof ICONS

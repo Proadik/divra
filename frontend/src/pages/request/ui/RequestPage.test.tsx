@@ -3,7 +3,7 @@ import { usePreferences } from '@/entities/currency'
 import { useWalletSession } from '@/entities/wallet'
 import { createPaymentRequests } from '@/shared/api'
 import { enableDemoData, renderWithRouter } from '@/shared/lib/test'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 describe('RequestPage', () => {
@@ -62,5 +62,53 @@ describe('RequestPage', () => {
       screen.getByRole('img', { name: /QR Solana Pay: Тимур платит 32.00 USDC/ }),
     ).toBeInTheDocument()
     expect(screen.getByText(`/r/${sent?.code ?? '—'}`, { exact: false })).toBeInTheDocument()
+  })
+
+  it('напоминание: текст со ссылкой копируется, второй раз за сутки — нельзя', async () => {
+    await createPaymentRequests('burabay', {
+      token: 'USDC',
+      recipient: '7xQpZkTn4yLm8wR2vB3c9dH5jK3kF2',
+      memberIds: ['timur'],
+      message: '',
+      remindInDays: null,
+    })
+    const { user } = renderWithRouter(<RequestPage />, {
+      route: '/groups/burabay/request',
+      path: '/groups/:groupId/request',
+    })
+    await user.click(await screen.findByRole('button', { name: /Тимур.*ждёт оплаты/ }))
+
+    await user.click(screen.getByRole('button', { name: 'Напомнить' }))
+
+    expect(
+      await screen.findByText('Текст напоминания скопирован — отправь его в мессенджер'),
+    ).toBeInTheDocument()
+    // user-event подменяет буфер обмена своим — читаем из него
+    expect(await navigator.clipboard.readText()).toContain('Тимур, напоминаю про долг')
+    expect(await screen.findByRole('button', { name: /Напоминал/ })).toBeDisabled()
+  })
+
+  it('отмена запроса: пропадает из «Отправленных»', async () => {
+    await createPaymentRequests('burabay', {
+      token: 'USDC',
+      recipient: '7xQpZkTn4yLm8wR2vB3c9dH5jK3kF2',
+      memberIds: ['timur'],
+      message: '',
+      remindInDays: null,
+    })
+    const { user } = renderWithRouter(<RequestPage />, {
+      route: '/groups/burabay/request',
+      path: '/groups/:groupId/request',
+    })
+    await user.click(await screen.findByRole('button', { name: /Тимур.*ждёт оплаты/ }))
+
+    await user.click(screen.getByRole('button', { name: 'Отменить запрос' }))
+    const buttons = await screen.findAllByRole('button', { name: 'Отменить запрос' })
+    await user.click(buttons.at(-1) as HTMLElement)
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Тимур.*ждёт оплаты/ })).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByRole('heading', { name: 'Отправленные' })).not.toBeInTheDocument()
   })
 })

@@ -137,3 +137,21 @@
   line-height: 20px;
   color: var(--ink-muted);
 }
+
+.group-page__hint {
+  padding: var(--space-2) 0 var(--space-1);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-muted);
+}
+
+.group-page__modal-text {
+  font-size: 15px;
+  line-height: 21px;
+  color: var(--ink-muted);
+}
+
+.group-page__modal-error {
+  font-size: 14px;
+  color: var(--danger);
+}

@@ -2,6 +2,7 @@ export { env } from './env'
 export {
   ROUTES,
   addExpensePath,
+  editExpensePath,
   groupPath,
   joinPath,
   membersPath,

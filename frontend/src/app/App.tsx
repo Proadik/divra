@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { FeatureFlagsSync, QueryProvider, WalletSessionSync } from './state'
+import { FeatureFlagsSync, QueryProvider, ServerEventsSync, WalletSessionSync } from './state'
 import { RouterProvider } from './router'
 
 export const App = (): ReactElement => {
@@ -7,6 +7,7 @@ export const App = (): ReactElement => {
     <QueryProvider>
       <FeatureFlagsSync>
         <WalletSessionSync />
+        <ServerEventsSync />
         <RouterProvider />
       </FeatureFlagsSync>
     </QueryProvider>

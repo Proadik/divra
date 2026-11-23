@@ -2,7 +2,10 @@ import { z } from 'zod'
 import { env } from '@/shared/config'
 import { api } from '../client'
 import {
+  type CashPaymentRequest,
+  type CashPaymentResult,
   type CreatePaymentRequests,
+  type PaymentReminder,
   type PaymentRequest,
   type PaymentRequestPreview,
   type PaymentTransaction,
@@ -12,7 +15,10 @@ import {
   type SettlementResult,
   type SubmitSettlementRequest,
   type WalletBalances,
+  cashPaymentRequestSchema,
+  cashPaymentResultSchema,
   createPaymentRequestsSchema,
+  paymentReminderSchema,
   paymentRequestPreviewSchema,
   paymentRequestSchema,
   paymentTransactionSchema,
@@ -129,6 +135,41 @@ export const getSentRequests = async (groupId: string): Promise<SentPaymentReque
     ? await (await loadMock()).getSentRequests(groupId)
     : await api.get<unknown>(`${groupPath(groupId)}/payment-requests`)
   return z.array(sentPaymentRequestSchema).parse(response)
+}
+
+const groupRequestPath = (groupId: string, code: string): string =>
+  `${groupPath(groupId)}/payment-requests/${encodeURIComponent(code)}`
+
+/** Отменить свой открытый запрос: ссылка перестанет принимать оплату */
+export const cancelPaymentRequest = async (groupId: string, code: string): Promise<void> => {
+  if (env.GROUPS_MOCK) {
+    await (await loadMock()).cancelPaymentRequest(groupId, code)
+    return
+  }
+  await api.delete<unknown>(groupRequestPath(groupId, code))
+}
+
+/** Текст напоминания со ссылкой. Бэкенд не даёт напоминать чаще раза в сутки (429) */
+export const remindPaymentRequest = async (
+  groupId: string,
+  code: string,
+): Promise<PaymentReminder> => {
+  const response = env.GROUPS_MOCK
+    ? await (await loadMock()).remindPaymentRequest(groupId, code)
+    : await api.post<unknown>(`${groupRequestPath(groupId, code)}/remind`)
+  return paymentReminderSchema.parse(response)
+}
+
+/** «Отдали наличными»: долг закрывает тот, кому должны. Не больше долга — проверяет бэкенд */
+export const recordCashPayment = async (
+  groupId: string,
+  input: CashPaymentRequest,
+): Promise<CashPaymentResult> => {
+  const body = cashPaymentRequestSchema.parse(input)
+  const response = env.GROUPS_MOCK
+    ? await (await loadMock()).recordCashPayment(groupId, body)
+    : await api.post<unknown>(`${groupPath(groupId)}/cash-payments`, body)
+  return cashPaymentResultSchema.parse(response)
 }
 
 export const paymentKeys = {

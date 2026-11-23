@@ -1,0 +1,7 @@
+.history-row__tile--in {
+  color: var(--accent);
+}
+
+.history-row__tile--out {
+  color: var(--owe);
+}

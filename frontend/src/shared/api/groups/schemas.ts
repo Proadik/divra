@@ -66,6 +66,15 @@ export const expenseSchema = z.object({
   /** null — вводили сразу в долларах */
   original: storedOriginalAmountSchema.nullable().default(null),
   createdAt: z.iso.datetime(),
+  /** Можешь ли ты править и удалять: ты автор расхода или его плательщик */
+  canEdit: z.boolean().default(false),
+})
+
+/** Расход для формы правки: доли всех участников */
+export const expenseDetailSchema = expenseSchema.extend({
+  splitMode: splitModeSchema,
+  shares: z.array(z.object({ memberId: z.string().min(1), amount })),
+  updatedAt: z.iso.datetime().nullable(),
 })
 
 export const groupOverviewSchema = z.object({
@@ -130,13 +139,13 @@ export const groupSummarySchema = z.object({
   lastActivityAt: z.iso.datetime(),
 })
 
-/** Событие ленты «Недавнее»: расход или перевод в любой из групп */
+/** Событие ленты «Недавнее»: расход, перевод в сети или возврат наличными */
 export const activitySchema = z.object({
   id: z.string().min(1),
-  type: z.enum(['expense', 'payment']),
+  type: z.enum(['expense', 'payment', 'cash']),
   groupId: z.string().min(1),
   groupName: z.string().min(1),
-  /** expense — кто платил; payment — кто перевёл */
+  /** expense — кто платил; payment и cash — кто вернул */
   actor: personSchema,
   /** payment — кому перевели; у расхода null */
   counterpart: personSchema.nullable(),
@@ -165,6 +174,9 @@ export const createGroupRequestSchema = z.object({
   kind: groupKindSchema,
 })
 
+/** Выйти из группы или удалить участника: left — ушёл ты сам */
+export const removeMemberResponseSchema = z.object({ left: z.boolean() })
+
 export type GroupMember = z.infer<typeof memberSchema>
 export type OriginalAmount = z.infer<typeof originalAmountSchema>
 export type ExpenseCategory = z.infer<typeof expenseCategorySchema>
@@ -177,4 +189,5 @@ export type SplitMode = z.infer<typeof splitModeSchema>
 export type GroupOverview = z.infer<typeof groupOverviewSchema>
 export type GroupDebt = GroupOverview['debts'][number]
 export type GroupExpense = z.infer<typeof expenseSchema>
+export type ExpenseDetail = z.infer<typeof expenseDetailSchema>
 export type CreateExpenseRequest = z.infer<typeof createExpenseRequestSchema>

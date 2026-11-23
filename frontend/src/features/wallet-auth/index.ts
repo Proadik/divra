@@ -1,4 +1,5 @@
 export { useDisconnectWallet } from './model/use-disconnect-wallet'
+export { DeleteAccountButton } from './ui/DeleteAccountButton'
 export { DisconnectButton, type DisconnectButtonProps } from './ui/DisconnectButton'
 export { VerifyWalletCard } from './ui/VerifyWalletCard'
 export { WalletList } from './ui/WalletList'

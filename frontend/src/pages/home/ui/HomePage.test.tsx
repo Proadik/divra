@@ -3,7 +3,7 @@ import { usePreferences } from '@/entities/currency'
 import { useWalletSession } from '@/entities/wallet'
 import { useFeatureFlagsStore } from '@/shared/lib/feature-flags'
 import { enableDemoData, renderWithRouter } from '@/shared/lib/test'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 describe('HomePage', () => {
@@ -77,5 +77,16 @@ describe('HomePage', () => {
     expect(screen.getByText('0.00')).toBeInTheDocument()
     expect(screen.getByText('Со всеми в расчёте')).toBeInTheDocument()
     expect(screen.queryByText('Недавнее')).not.toBeInTheDocument()
+  })
+
+  it('«История»: последние 5 переводов в сети и кнопка «Все»', async () => {
+    renderWithRouter(<HomePage />)
+
+    const section = (await screen.findByRole('heading', { name: 'История' })).closest('section')
+    expect(section).not.toBeNull()
+    await waitFor(() =>
+      expect(within(section as HTMLElement).getAllByText(/^(От|Кому):/)).toHaveLength(5),
+    )
+    expect(within(section as HTMLElement).getByRole('button', { name: 'Все' })).toBeInTheDocument()
   })
 })

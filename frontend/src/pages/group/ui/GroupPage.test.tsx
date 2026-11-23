@@ -44,4 +44,27 @@ describe('GroupPage', () => {
     expect(screen.getByText('≈ по курсу 1 USD = 515.40 ₸ · расчёт в USDC')).toBeInTheDocument()
     expect(usePreferences.getState().amountsIn).toBe('fiat')
   })
+
+  it('возврат наличными: тот, кому должны, отмечает — долг уменьшается', async () => {
+    const { user } = renderWithRouter(<GroupPage />, {
+      route: '/groups/burabay',
+      path: '/groups/:groupId',
+    })
+    await screen.findByText('+48.20')
+
+    await user.click(screen.getByRole('button', { name: /Тимур.*вернёт тебе/ }))
+    await user.type(await screen.findByLabelText('Сколько вернул, $'), '12')
+    await user.click(screen.getByRole('button', { name: 'Отметить возврат' }))
+
+    // Тимур был должен 32.00 → 20.00, баланс 48.20 → 36.20
+    expect(await screen.findByText('+36.20')).toBeInTheDocument()
+  })
+
+  it('свой расход открывается для правки, чужой — нет', async () => {
+    renderWithRouter(<GroupPage />, { route: '/groups/burabay', path: '/groups/:groupId' })
+    await screen.findByText('+48.20')
+
+    expect(screen.getByRole('button', { name: /Домик у озера/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Бензин до Бурабая/ })).not.toBeInTheDocument()
+  })
 })

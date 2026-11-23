@@ -8,6 +8,7 @@ import {
   type WalletSession,
   type WalletVerifyRequest,
   accessTokenSchema,
+  updateProfileSchema,
   userProfileSchema,
   walletChallengeRequestSchema,
   walletChallengeSchema,
@@ -81,6 +82,30 @@ export const signOutSession = async (): Promise<void> => {
 export const getMe = async (): Promise<UserProfile> => {
   const response = env.AUTH_MOCK ? await (await loadMock()).me() : await api.get<unknown>('/me')
   return userProfileSchema.parse(response)
+}
+
+/** Имя профиля: им ты входишь в новые группы, оно заменяет короткий адрес в старых */
+export const updateProfile = async (input: {
+  displayName?: string
+  detectTransfers?: boolean
+}): Promise<UserProfile> => {
+  const body = updateProfileSchema.parse(input)
+  const response = env.AUTH_MOCK
+    ? await (await loadMock()).updateProfile(body)
+    : await api.patch<unknown>('/me', body)
+  return userProfileSchema.parse(response)
+}
+
+/**
+ * Удалить аккаунт: кошельки и все сессии. В группах остаёшься участником без кошелька —
+ * расходы и долги других не ломаются. Бэкенд заодно стирает refresh-cookie.
+ */
+export const deleteAccount = async (): Promise<void> => {
+  if (env.AUTH_MOCK) {
+    ;(await loadMock()).deleteAccount()
+    return
+  }
+  await api.delete<unknown>('/me')
 }
 
 export const authKeys = {

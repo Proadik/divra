@@ -7,9 +7,11 @@ const statusText = (item: SentPaymentRequest): string => {
   const sent = `отправлен ${formatRelativeDay(item.createdAt)}`
   switch (item.status) {
     case 'open':
-      return `${sent} · ждёт оплаты до ${formatRelativeDay(item.expiresAt)}`
+      return item.remindedAt
+        ? `${sent} · напоминал ${formatRelativeDay(item.remindedAt)}`
+        : `${sent} · ждёт оплаты до ${formatRelativeDay(item.expiresAt)}`
     case 'paid':
-      return `оплачен ${formatRelativeDay(item.paidAt ?? item.createdAt)}`
+      return `оплачен${item.signature ? '' : ' наличными'} ${formatRelativeDay(item.paidAt ?? item.createdAt)}`
     case 'expired':
       return `${sent} · ссылка истекла`
   }

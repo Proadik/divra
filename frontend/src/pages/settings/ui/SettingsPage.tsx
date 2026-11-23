@@ -3,7 +3,7 @@ import type { ReactElement } from 'react'
 import { useNavigate } from 'react-router'
 import { usePreferences } from '@/entities/currency'
 import { WalletChip, useWalletSession } from '@/entities/wallet'
-import { DisconnectButton } from '@/features/wallet-auth'
+import { DeleteAccountButton, DisconnectButton } from '@/features/wallet-auth'
 import { RATES_STALE_MS, authKeys, getMe, getRates, ratesKeys } from '@/shared/api'
 import { ROUTES, STABLECOINS, env } from '@/shared/config'
 import { flagsSource } from '@/shared/lib/feature-flags'
@@ -12,6 +12,8 @@ import { getWalletAdapter } from '@/shared/lib/wallets'
 import { IconButton, ListGroup, SegmentedControl } from '@/shared/ui'
 import { CurrencyList } from './CurrencyList'
 import { FeatureFlagsPanel } from './FeatureFlagsPanel'
+import { DetectTransfersToggle } from './DetectTransfersToggle'
+import { ProfileNameForm } from './ProfileNameForm'
 import './SettingsPage.css'
 
 const COIN_OPTIONS = STABLECOINS.map((code) => ({ value: code, label: code }))
@@ -43,6 +45,23 @@ export const SettingsPage = (): ReactElement => {
         <h1 className="settings__title">Настройки</h1>
         <span className="settings__spacer" aria-hidden />
       </header>
+
+      <section className="settings__section" aria-labelledby="settings-profile">
+        <h2 id="settings-profile" className="settings__heading">
+          Профиль
+        </h2>
+        {me.data ? (
+          // key: после загрузки профиля поле начинается с его имени
+          <ProfileNameForm key={me.data.id} profile={me.data} />
+        ) : (
+          <p className="settings__hint">{me.isError ? 'Профиль не загрузился' : 'Загружаем…'}</p>
+        )}
+        <p className="settings__hint">
+          Так тебя увидят в группах. Пока имени нет, вместо него показывается короткий адрес
+          кошелька.
+        </p>
+        {me.data && <DetectTransfersToggle profile={me.data} />}
+      </section>
 
       <section className="settings__section" aria-labelledby="settings-currency">
         <div className="settings__heading-row">
@@ -106,6 +125,7 @@ export const SettingsPage = (): ReactElement => {
         {me.isError && <p className="settings__note">Профиль не загрузился</p>}
         <div className="settings__disconnect">
           <DisconnectButton variant="text" />
+          <DeleteAccountButton />
         </div>
       </ListGroup>
     </main>

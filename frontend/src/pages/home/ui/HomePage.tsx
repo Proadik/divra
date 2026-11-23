@@ -1,12 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { type ReactElement, useState } from 'react'
 import { useNavigate } from 'react-router'
+import { DetectedTransfers } from '@/features/detected-transfers'
 import { getHomeOverview, groupKeys } from '@/shared/api'
 import { addExpensePath } from '@/shared/config'
 import { Button, Fab, Modal } from '@/shared/ui'
 import { ActivitySection } from './ActivitySection'
 import { CreateGroupDialog } from './CreateGroupDialog'
 import { GroupsSection } from './GroupsSection'
+import { HistorySection } from './HistorySection'
 import { HomeHeader } from './HomeHeader'
 import { PickGroupList } from './PickGroupDialog'
 import { TotalsCard } from './TotalsCard'
@@ -55,8 +57,10 @@ export const HomePage = (): ReactElement => {
     <main className="home page-enter">
       <HomeHeader />
       <TotalsCard data={data} />
+      <DetectedTransfers />
       <GroupsSection groups={data.groups} onCreate={() => setDialog('create')} />
       <ActivitySection items={data.activity} />
+      <HistorySection />
 
       <CreateGroupDialog open={dialog === 'create'} onClose={close} />
       <Modal open={dialog === 'pick'} onClose={close} title="В какую группу?">

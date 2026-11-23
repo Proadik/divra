@@ -5,6 +5,7 @@ import { Button, IconButton } from '@/shared/ui'
 import { useRequest } from '../model/use-request'
 import { RequestPick } from './RequestPick'
 import { RequestShare } from './RequestShare'
+import { SentRequestActions } from './SentRequestActions'
 import { SentRequests } from './SentRequests'
 import './RequestPage.css'
 
@@ -39,7 +40,16 @@ export const RequestPage = (): ReactElement => {
       return <RequestShare requests={created} message={model.message} />
     }
     if (reopened) {
-      return <RequestShare requests={[reopened]} message={`Напоминаю про «${model.group.name}»`} />
+      return (
+        <>
+          <RequestShare requests={[reopened]} message={`Напоминаю про «${model.group.name}»`} />
+          <SentRequestActions
+            groupId={groupId}
+            request={reopened}
+            onCancelled={() => model.reopen(null)}
+          />
+        </>
+      )
     }
     if (model.rows.length === 0) {
       return (

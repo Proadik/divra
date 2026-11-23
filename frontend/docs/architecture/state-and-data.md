@@ -79,3 +79,43 @@ restoring — после перезагрузки: тихо переподклю
 | `VITE_SOLANA_CLUSTER`   | `devnet`                | `devnet` / `testnet` / `mainnet-beta`                          |
 | `VITE_SOLANA_RPC_URL`   | публичный RPC кластера  | Нужен моку для свежего blockhash                               |
 | `VITE_SITE_URL`         | —                       | Абсолютные ссылки в SEO-тегах                                  |
+
+## События с сервера
+
+Бэкенд сообщает об изменениях через WebSocket (socket.io), чтобы экраны обновлялись сразу — например, когда друг
+добавил расход или перевёл деньги. Контракт — `backend/src/events/events.gateway.ts`.
+
+- `shared/api/events` — `connectEvents()`: `socket.io-client`, путь из `VITE_API_URL` (`/api` → `/api/socket.io`),
+  только транспорт WebSocket. Access-токен передаётся в handshake (`auth`), а не в URL. Полезная нагрузка
+  проверяется zod.
+- `app/state/ServerEventsSync` — подключается, пока есть сессия, и переводит события в кэш:
+
+  | Событие             | Что помечается устаревшим                                                           |
+  | ------------------- | ----------------------------------------------------------------------------------- |
+  | `group.changed`     | `groupKeys.all`, `paymentKeys.sent(groupId)`, `transferKeys.all`, `historyKeys.all` |
+  | `transfer.detected` | `transferKeys.all`, `historyKeys.all`                                               |
+  | `history.changed`   | `historyKeys.all`                                                                   |
+
+  Данные не приходят в событии: открытые экраны сами перезапрашивают их обычными запросами (те же zod-схемы
+  и проверки доступа).
+
+- **Токен истёк** — сервер закрывает соединение; `ServerEventsSync` вызывает `refreshAccessToken()` (общий
+  с HTTP-клиентом, без гонок одноразового refresh) и переподключается. Не вышло — `sessionExpired()`.
+- **Мок** (`VITE_GROUPS_MOCK=true`): вместо сокета — `shared/api/mock/events`, мок сам сообщает о своих изменениях.
+- **Прокси:** в dev Vite проксирует WebSocket на `/api` (`ws: true` в `vite.config.ts`); в production nginx
+  должен передавать `Upgrade` и `Connection` для `/api/socket.io`.
+- Без соединения всё работает как раньше: кэш групп живёт 30 секунд и обновляется при возврате на вкладку.
+
+## История переводов
+
+- `shared/api/history` — `getHistory({ cursor, limit })` → `{ items, nextCursor }` (`GET /me/history`), ключи
+  `historyKeys.preview()` (главная) и `historyKeys.list()` (страница).
+- **Главная** (`pages/home/ui/HistorySection`) — 5 последних переводов и кнопка «Все» → `/history`.
+- **Страница** (`pages/history`) — `useInfiniteQuery`, `getNextPageParam: last.nextCursor`. Следующая страница
+  грузится, когда невидимый блок под списком оказывается в 600px от экрана (`IntersectionObserver`); есть и кнопка
+  «Показать ещё». Внизу — «Это все переводы».
+- **Строка** — `entities/history` (`HistoryRow`): «От / Кому», статус (засчитано в группе / ждёт решения /
+  не связано с долгами), дата, ссылка в Solscan, сумма со знаком. Строка не кнопка: внутри ссылка.
+- Обновляется событиями `history.changed`, `group.changed`, `transfer.detected`.
+- **Мок:** оплаты в сети из мок-базы, переводы мимо Divra и (с демо-данными) 36 старых переводов, чтобы было что
+  листать. Курсор мока — смещение.

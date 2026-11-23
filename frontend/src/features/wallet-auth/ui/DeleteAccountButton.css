@@ -1,0 +1,10 @@
+.delete-account__text {
+  font-size: 15px;
+  line-height: 21px;
+  color: var(--ink-muted);
+}
+
+.delete-account__error {
+  font-size: 14px;
+  color: var(--danger);
+}

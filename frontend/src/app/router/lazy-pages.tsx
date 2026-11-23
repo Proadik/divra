@@ -16,6 +16,7 @@ const RequestPage = lazy(async () => ({ default: (await import('@/pages/request'
 const PayRequestPage = lazy(async () => ({
   default: (await import('@/pages/pay-request')).PayRequestPage,
 }))
+const HistoryPage = lazy(async () => ({ default: (await import('@/pages/history')).HistoryPage }))
 const JoinPage = lazy(async () => ({ default: (await import('@/pages/join')).JoinPage }))
 
 export const LazyAddExpensePage = (): ReactElement => (
@@ -57,5 +58,11 @@ export const LazyRequestPage = (): ReactElement => (
 export const LazyPayRequestPage = (): ReactElement => (
   <Suspense fallback={null}>
     <PayRequestPage />
+  </Suspense>
+)
+
+export const LazyHistoryPage = (): ReactElement => (
+  <Suspense fallback={null}>
+    <HistoryPage />
   </Suspense>
 )

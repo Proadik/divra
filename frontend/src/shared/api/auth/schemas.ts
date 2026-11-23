@@ -54,12 +54,21 @@ export const walletSessionSchema = accessTokenSchema.extend({
 export const userProfileSchema = z.object({
   id: z.string().min(1),
   displayName: z.string().nullable(),
+  /** Замечать переводы мимо Divra от участников общих групп */
+  detectTransfers: z.boolean().default(true),
   createdAt: z.iso.datetime(),
   lastSignInAt: z.iso.datetime().nullable(),
   wallets: z.array(
     z.object({ chain: chainIdSchema, address: z.string(), createdAt: z.iso.datetime() }),
   ),
 })
+
+export const updateProfileSchema = z
+  .object({
+    displayName: z.string().trim().min(1, 'Введи имя').max(32, 'Не длиннее 32 символов'),
+    detectTransfers: z.boolean(),
+  })
+  .partial()
 
 export type WalletChallengeRequest = z.infer<typeof walletChallengeRequestSchema>
 export type WalletChallenge = z.infer<typeof walletChallengeSchema>

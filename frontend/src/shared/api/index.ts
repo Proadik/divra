@@ -2,8 +2,11 @@ export { CLIENT_HEADER, api, ApiError, configureAuth, request, type AuthBridge }
 export { apiErrorMessage } from './errors'
 export {
   authKeys,
+  deleteAccount,
   getMe,
   refreshAccessToken,
+  updateProfile,
+  updateProfileSchema,
   requestWalletChallenge,
   signOutSession,
   verifyWalletChallenge,
@@ -19,6 +22,14 @@ export {
   createExpense,
   createGroup,
   createInvite,
+  deleteExpense,
+  getActiveInvites,
+  getExpense,
+  removeMember,
+  revokeInvite,
+  updateExpense,
+  type ActiveInvite,
+  type ExpenseDetail,
   getGroupOverview,
   getHomeOverview,
   resetMockData,
@@ -48,7 +59,12 @@ export {
 export { RATES_STALE_MS, getRates, ratesKeys, ratesSchema, type Rates } from './rates'
 export {
   buildPaymentTransaction,
+  cancelPaymentRequest,
   canPayFromPage,
+  recordCashPayment,
+  remindPaymentRequest,
+  type CashPaymentResult,
+  type PaymentReminder,
   createPaymentRequests,
   getPaymentRequest,
   getSentRequests,
@@ -66,3 +82,20 @@ export {
   type SettlementResult,
   type WalletBalances,
 } from './payments'
+export {
+  applyDetectedTransfer,
+  dismissDetectedTransfer,
+  getDetectedTransfers,
+  simulateDetectedTransfer,
+  transferKeys,
+  type AppliedTransfer,
+  type DetectedTransfer,
+} from './transfers'
+export { connectEvents, type EventsConnection, type ServerEvent } from './events'
+export {
+  HISTORY_PREVIEW_LIMIT,
+  getHistory,
+  historyKeys,
+  type HistoryItem,
+  type HistoryPage,
+} from './history'

@@ -1,7 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query'
-import type { ReactElement } from 'react'
-import { groupKeys, inviteKeys, resetMockData } from '@/shared/api'
-import { FEATURE_FLAGS, FLAG_NAMES, type FlagName } from '@/shared/config'
+import { type ReactElement, useState } from 'react'
+import {
+  apiErrorMessage,
+  groupKeys,
+  inviteKeys,
+  resetMockData,
+  simulateDetectedTransfer,
+} from '@/shared/api'
+import { FEATURE_FLAGS, FLAG_NAMES, type FlagName, env } from '@/shared/config'
 import {
   flagsSource,
   useFeatureFlagsStore,
@@ -41,6 +47,31 @@ const FlagRow = ({ name, editable }: { name: FlagName; editable: boolean }): Rea
   )
 }
 
+/** Мок: «должник перевёл тебе из кошелька» — показать подсказку без сети и Helius */
+const SimulateTransferButton = (): ReactElement => {
+  const [note, setNote] = useState<string | null>(null)
+  const simulate = async (): Promise<void> => {
+    try {
+      await simulateDetectedTransfer()
+      setNote('Готово — карточка перевода на главной')
+    } catch (error) {
+      setNote(apiErrorMessage(error, 'Не получилось'))
+    }
+  }
+  return (
+    <>
+      <button type="button" className="settings__flag-reset" onClick={() => void simulate()}>
+        Имитировать перевод мимо Divra
+      </button>
+      {note && (
+        <p className="settings__hint" role="status">
+          {note}
+        </p>
+      )}
+    </>
+  )
+}
+
 /**
  * Фича-флаги. С локальным источником переключатели пишут в «базу» в localStorage —
  * изменение сразу подхватывают все открытые вкладки. С удалённым — только просмотр:
@@ -67,6 +98,7 @@ export const FeatureFlagsPanel = (): ReactElement => {
       <button type="button" className="settings__flag-reset" onClick={() => void resetData()}>
         Сбросить мок-данные
       </button>
+      {env.GROUPS_MOCK && <SimulateTransferButton />}
       <p className="settings__hint">
         {editable
           ? 'Локальная «база» флагов: изменение сразу применяется во всех вкладках, данные перезагружаются из нового источника.'

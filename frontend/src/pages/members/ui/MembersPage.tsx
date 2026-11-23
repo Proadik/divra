@@ -1,5 +1,5 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
-import type { ReactElement } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { type ReactElement, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import {
   type GroupMember,
@@ -7,12 +7,15 @@ import {
   createInvite,
   getGroupOverview,
   groupKeys,
+  inviteKeys,
 } from '@/shared/api'
-import { groupPath } from '@/shared/config'
+import { ROUTES, groupPath } from '@/shared/config'
 import { pluralize } from '@/shared/lib/format'
 import { Avatar, type AvatarTone, Button, IconButton, ListGroup, ListRow } from '@/shared/ui'
+import { ActiveInvites } from './ActiveInvites'
 import { AddByNameForm } from './AddByNameForm'
 import { InviteLinkCard } from './InviteLinkCard'
+import { RemoveMemberDialog } from './RemoveMemberDialog'
 import './MembersPage.css'
 
 const toneOf = (index: number): AvatarTone => ((index % 4) + 1) as AvatarTone
@@ -27,6 +30,8 @@ const statusText = (member: GroupMember): string => {
 export const MembersPage = (): ReactElement => {
   const { groupId = '' } = useParams()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [removing, setRemoving] = useState<GroupMember | null>(null)
   const overview = useQuery({
     queryKey: groupKeys.overview(groupId),
     queryFn: () => getGroupOverview(groupId),
@@ -34,7 +39,9 @@ export const MembersPage = (): ReactElement => {
   const invite = useMutation({
     mutationFn: (claimMemberId: string | null) =>
       createInvite(groupId, claimMemberId ? { claimMemberId } : {}),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: inviteKeys.active(groupId) }),
   })
+  const me = overview.data?.members.find((member) => member.isMe)
 
   const members = overview.data?.members ?? []
   const claimName = invite.data?.claimMemberId
@@ -70,14 +77,21 @@ export const MembersPage = (): ReactElement => {
             subtitle={statusText(member)}
             trailing={
               member.status === 'pending' ? (
-                <Button
-                  variant="ghost"
-                  icon="link"
-                  disabled={invite.isPending}
-                  onClick={() => invite.mutate(member.id)}
-                >
-                  Ссылка
-                </Button>
+                <span className="members__row-actions">
+                  <Button
+                    variant="ghost"
+                    icon="link"
+                    disabled={invite.isPending}
+                    onClick={() => invite.mutate(member.id)}
+                  >
+                    Ссылка
+                  </Button>
+                  <IconButton
+                    icon="trash"
+                    label={`Удалить ${member.name}`}
+                    onClick={() => setRemoving(member)}
+                  />
+                </span>
               ) : undefined
             }
           />
@@ -125,6 +139,21 @@ export const MembersPage = (): ReactElement => {
         </p>
         <AddByNameForm groupId={groupId} />
       </section>
+
+      <ActiveInvites groupId={groupId} />
+
+      {me && (
+        <Button variant="ghost" icon="logout" block onClick={() => setRemoving(me)}>
+          Выйти из группы
+        </Button>
+      )}
+
+      <RemoveMemberDialog
+        groupId={groupId}
+        member={removing}
+        onClose={() => setRemoving(null)}
+        onLeft={() => void navigate(ROUTES.home)}
+      />
     </main>
   )
 }

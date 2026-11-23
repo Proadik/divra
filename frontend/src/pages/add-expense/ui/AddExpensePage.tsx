@@ -1,9 +1,10 @@
-import { type ReactElement, useId } from 'react'
+import { type ReactElement, useId, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { useStablecoin } from '@/entities/currency'
 import { FIAT_CURRENCIES, FIAT_SYMBOLS, type FiatCurrency, groupPath } from '@/shared/config'
+import { apiErrorMessage } from '@/shared/api'
 import { formatAmount } from '@/shared/lib/format'
-import { Button, Icon, IconButton, SegmentedControl, TextField } from '@/shared/ui'
+import { Button, Icon, IconButton, Modal, SegmentedControl, TextField } from '@/shared/ui'
 import { amountMasks } from '../lib/masks'
 import type { SplitResult } from '../lib/split'
 import { useExpenseForm } from '../model/use-expense-form'
@@ -42,15 +43,17 @@ const splitHint = (
 }
 
 export const AddExpensePage = (): ReactElement => {
-  const { groupId = '' } = useParams()
+  const { groupId = '', expenseId } = useParams()
   const navigate = useNavigate()
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const payerId = useId()
   const amountId = useId()
   const stablecoin = useStablecoin()
   const goHome = (): void => {
     void navigate(groupPath(groupId))
   }
-  const form = useExpenseForm(groupId, goHome)
+  const form = useExpenseForm(groupId, goHome, expenseId)
+  const isEdit = form.kind === 'edit'
   const { values } = form
   const symbol = FIAT_SYMBOLS[values.currency]
   const hint = splitHint(form.split, symbol, form.fractionDigits)
@@ -70,12 +73,35 @@ export const AddExpensePage = (): ReactElement => {
       : `≈ ${formatAmount(form.stableCents / 100)} ${stablecoin} · ${rateText}`
   })()
 
+  if (isEdit && (form.isLoading || form.loadError || !form.canEdit)) {
+    return (
+      <main className="add-expense page-enter">
+        <header className="add-expense__header">
+          <IconButton icon="close" label="Закрыть" onClick={goHome} />
+          <h1 className="add-expense__title">Расход</h1>
+          <span className="add-expense__spacer" aria-hidden />
+        </header>
+        <p className="add-expense__status" role="status">
+          {form.isLoading
+            ? 'Загружаем расход…'
+            : form.loadError
+              ? apiErrorMessage(form.loadError, 'Расход не найден — возможно, его уже удалили')
+              : 'Править расход может только тот, кто его записал, или тот, кто платил'}
+        </p>
+      </main>
+    )
+  }
+
   return (
     <main className="add-expense page-enter">
       <header className="add-expense__header">
         <IconButton icon="close" label="Закрыть" onClick={goHome} />
-        <h1 className="add-expense__title">Новый расход</h1>
-        <span className="add-expense__spacer" aria-hidden />
+        <h1 className="add-expense__title">{isEdit ? 'Правка расхода' : 'Новый расход'}</h1>
+        {isEdit ? (
+          <IconButton icon="trash" label="Удалить расход" onClick={() => setConfirmDelete(true)} />
+        ) : (
+          <span className="add-expense__spacer" aria-hidden />
+        )}
       </header>
 
       <div className="add-expense__amount">
@@ -189,7 +215,7 @@ export const AddExpensePage = (): ReactElement => {
         {(form.submitError || (!form.payload.ok && form.payload.message)) && (
           <p className="add-expense__error" role="alert">
             {form.submitError
-              ? 'Не удалось сохранить расход. Попробуй ещё раз.'
+              ? apiErrorMessage(form.submitError, 'Не удалось сохранить расход. Попробуй ещё раз.')
               : form.payload.ok
                 ? null
                 : form.payload.message}
@@ -201,9 +227,36 @@ export const AddExpensePage = (): ReactElement => {
           disabled={!form.payload.ok || form.isSubmitting}
           onClick={form.submit}
         >
-          {form.isSubmitting ? 'Сохраняем…' : 'Сохранить расход'}
+          {form.isSubmitting ? 'Сохраняем…' : isEdit ? 'Сохранить изменения' : 'Сохранить расход'}
         </Button>
       </div>
+
+      {isEdit && (
+        <Modal
+          open={confirmDelete}
+          onClose={() => setConfirmDelete(false)}
+          title="Удалить расход?"
+          actions={
+            <>
+              <Button variant="danger" block disabled={form.isRemoving} onClick={form.remove}>
+                {form.isRemoving ? 'Удаляем…' : 'Удалить'}
+              </Button>
+              <Button variant="ghost" block onClick={() => setConfirmDelete(false)}>
+                Отмена
+              </Button>
+            </>
+          }
+        >
+          <p className="add-expense__modal-text">
+            «{values.title}» пропадёт у всех участников, долги пересчитаются.
+          </p>
+          {form.removeError && (
+            <p className="add-expense__error" role="alert">
+              {apiErrorMessage(form.removeError, 'Не удалось удалить расход')}
+            </p>
+          )}
+        </Modal>
+      )}
     </main>
   )
 }

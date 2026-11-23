@@ -1,6 +1,9 @@
 export {
   buildPaymentTransaction,
+  cancelPaymentRequest,
   canPayFromPage,
+  recordCashPayment,
+  remindPaymentRequest,
   createPaymentRequests,
   getPaymentRequest,
   getSentRequests,
@@ -11,7 +14,10 @@ export {
   submitSettlement,
 } from './payments-api'
 export type {
+  CashPaymentRequest,
+  CashPaymentResult,
   CreatePaymentRequests,
+  PaymentReminder,
   PaymentRequest,
   PaymentRequestPreview,
   PaymentTransaction,

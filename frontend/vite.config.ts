@@ -17,6 +17,8 @@ export default defineConfig(({ mode }) => ({
         target:
           loadEnv(mode, process.cwd(), 'VITE_').VITE_API_PROXY_TARGET || 'http://localhost:3000',
         changeOrigin: false,
+        // События (socket.io) идут WebSocket'ом по тому же /api
+        ws: true,
       },
     },
   },

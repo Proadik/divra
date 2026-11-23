@@ -49,6 +49,15 @@
   padding: 0 var(--space-3);
 }
 
+.sp-btn--danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.sp-btn--danger:not(:disabled):active {
+  transform: scale(0.98);
+}
+
 .sp-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;

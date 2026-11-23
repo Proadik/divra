@@ -29,4 +29,16 @@ describe('SettingsPage', () => {
       within(screen.getByRole('group', { name: 'Валюта ввода' })).getAllByRole('radio'),
     ).toHaveLength(3)
   })
+
+  it('имя профиля сохраняется', async () => {
+    localStorage.setItem('divra.mock-auth-session', '7xQpZkTn4yLm8wR2vB3c9dH5jK3kF2')
+    const { user } = renderWithRouter(<SettingsPage />)
+
+    const field = await screen.findByLabelText('Как тебя зовут')
+    await user.type(field, 'Адиль')
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    expect(await screen.findByRole('button', { name: 'Сохранено' })).toBeDisabled()
+    expect(localStorage.getItem('divra.mock-profile-name')).toBe('Адиль')
+  })
 })

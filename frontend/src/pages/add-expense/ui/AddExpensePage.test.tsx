@@ -1,5 +1,6 @@
 import { AddExpensePage } from './AddExpensePage'
 import { usePreferences } from '@/entities/currency'
+import { getGroupOverview } from '@/shared/api'
 import { enableDemoData, renderWithRouter } from '@/shared/lib/test'
 import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -60,5 +61,52 @@ describe('AddExpensePage', () => {
     await user.type(screen.getByPlaceholderText('0'), '812')
 
     expect(await screen.findByText('≈ 10.00 USDC · 1 USD = 81.20 ₽')).toBeInTheDocument()
+  })
+
+  describe('правка', () => {
+    const renderEdit = (expenseId: string): ReturnType<typeof renderWithRouter> =>
+      renderWithRouter(<AddExpensePage />, {
+        route: `/groups/burabay/expenses/${expenseId}/edit`,
+        path: '/groups/:groupId/expenses/:expenseId/edit',
+      })
+
+    it('открывает свой расход заполненным и сохраняет изменения', async () => {
+      const { user } = renderEdit('e3')
+
+      const title = await screen.findByDisplayValue('Домик у озера')
+      expect(screen.getByRole('heading', { name: 'Правка расхода' })).toBeInTheDocument()
+      expect(screen.getByRole('combobox', { name: 'Валюта суммы' })).toHaveValue('USD')
+      expect(screen.getByText('Сумма распределена полностью')).toBeInTheDocument()
+
+      await user.clear(title)
+      await user.type(title, 'Домик и баня')
+      await user.click(screen.getByRole('button', { name: 'Сохранить изменения' }))
+
+      await expect
+        .poll(async () => (await getGroupOverview('burabay')).expenses.map((item) => item.title))
+        .toContain('Домик и баня')
+    })
+
+    it('удаляет расход после подтверждения', async () => {
+      const { user } = renderEdit('e6')
+      await screen.findByDisplayValue('Прокат лодки')
+
+      await user.click(screen.getByRole('button', { name: 'Удалить расход' }))
+      await user.click(await screen.findByRole('button', { name: 'Удалить' }))
+
+      await expect
+        .poll(async () => (await getGroupOverview('burabay')).expenses.map((item) => item.id))
+        .not.toContain('e6')
+    })
+
+    it('чужой расход (не автор и не плательщик) не открывается для правки', async () => {
+      renderEdit('e1')
+
+      expect(
+        await screen.findByText(
+          'Править расход может только тот, кто его записал, или тот, кто платил',
+        ),
+      ).toBeInTheDocument()
+    })
   })
 })

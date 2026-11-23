@@ -31,7 +31,11 @@ export const Modal = ({ open, onClose, title, children, actions }: ModalProps): 
       }
     }
     if (!open && dialog.open) {
-      dialog.close()
+      if (typeof dialog.close === 'function') {
+        dialog.close()
+      } else {
+        dialog.removeAttribute('open')
+      }
     }
   }, [open])
 

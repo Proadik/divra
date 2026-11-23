@@ -28,6 +28,11 @@ export const activityTitle = (item: Activity): string => {
   if (item.type === 'expense') {
     return item.title ?? 'Расход'
   }
+  if (item.type === 'cash') {
+    return item.counterpart?.isMe
+      ? `Наличными от ${item.actor.name}`
+      : `Твой возврат наличными: ${item.counterpart?.name ?? 'участник'}`
+  }
   if (item.counterpart?.isMe) {
     return `Перевод от ${item.actor.name}`
   }

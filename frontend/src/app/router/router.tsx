@@ -8,6 +8,7 @@ import { ROUTES } from '@/shared/config'
 import { createBrowserRouter } from 'react-router'
 import {
   LazyAddExpensePage,
+  LazyHistoryPage,
   LazyJoinPage,
   LazyMembersPage,
   LazyPayRequestPage,
@@ -49,6 +50,14 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: ROUTES.editExpense,
+        element: (
+          <SessionGate access="verified">
+            <LazyAddExpensePage />
+          </SessionGate>
+        ),
+      },
+      {
         path: ROUTES.members,
         element: (
           <SessionGate access="verified">
@@ -78,6 +87,14 @@ export const router = createBrowserRouter([
         element: (
           <SessionGate access="any">
             <LazyPayRequestPage />
+          </SessionGate>
+        ),
+      },
+      {
+        path: ROUTES.history,
+        element: (
+          <SessionGate access="verified">
+            <LazyHistoryPage />
           </SessionGate>
         ),
       },

@@ -34,6 +34,9 @@ type Challenge = {
 
 const TTL_MS = 5 * 60 * 1000
 const SESSION_KEY = 'divra.mock-auth-session'
+/** Имя профиля в моке */
+const PROFILE_NAME_KEY = 'divra.mock-profile-name'
+const DETECT_KEY = 'divra.mock-detect-transfers'
 const MOCK_USER_ID = '00000000-0000-4000-8000-000000000001'
 
 const mockToken = (): string =>
@@ -179,6 +182,33 @@ export const mockAuthBackend = {
     }
   },
 
+  async updateProfile(input: { displayName?: string; detectTransfers?: boolean }) {
+    await delay(250)
+    try {
+      if (input.displayName !== undefined) {
+        localStorage.setItem(PROFILE_NAME_KEY, input.displayName.trim())
+      }
+      if (input.detectTransfers !== undefined) {
+        localStorage.setItem(DETECT_KEY, String(input.detectTransfers))
+      }
+    } catch {
+      // Нет доступа к storage — настройки не сохранятся
+    }
+    return this.me()
+  },
+
+  /** Удаление аккаунта в моке: сессия и имя профиля стираются, группы — тоже (их видел только ты) */
+  deleteAccount() {
+    this.signOut()
+    try {
+      localStorage.removeItem(PROFILE_NAME_KEY)
+      localStorage.removeItem('divra.mock-db')
+      localStorage.removeItem('divra.mock-db:empty')
+    } catch {
+      // Нет доступа к storage — удалять нечего
+    }
+  },
+
   async me() {
     await delay(200)
     const walletAddress = sessionAddress()
@@ -186,9 +216,18 @@ export const mockAuthBackend = {
       return reject(401, 'Сессии нет — войди заново')
     }
     const createdAt = new Date(Date.now() - 3 * 24 * 3_600_000).toISOString()
+    let displayName: string | null = null
+    let detectTransfers = true
+    try {
+      displayName = localStorage.getItem(PROFILE_NAME_KEY)
+      detectTransfers = localStorage.getItem(DETECT_KEY) !== 'false'
+    } catch {
+      // Нет доступа к storage — настройки по умолчанию
+    }
     return {
       id: MOCK_USER_ID,
-      displayName: null,
+      displayName,
+      detectTransfers,
       createdAt,
       lastSignInAt: new Date().toISOString(),
       wallets: [{ chain: 'solana', address: walletAddress, createdAt }],

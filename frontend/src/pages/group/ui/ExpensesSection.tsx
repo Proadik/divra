@@ -1,8 +1,9 @@
 import type { ReactElement } from 'react'
+import { useNavigate } from 'react-router'
 import { CATEGORY_ICONS } from '@/entities/expense'
 import type { Money } from '@/entities/currency'
 import type { GroupExpense, GroupOverview } from '@/shared/api'
-import { fiatSymbol } from '@/shared/config'
+import { editExpensePath, fiatSymbol } from '@/shared/config'
 import { formatAmountShort, formatRelativeDay } from '@/shared/lib/format'
 import { Amount, ListGroup, ListRow, StatusPill } from '@/shared/ui'
 import { findMember } from '../lib/group'
@@ -41,6 +42,7 @@ export const ExpensesSection = ({
   group: GroupOverview
   money: Money
 }): ReactElement => {
+  const navigate = useNavigate()
   return (
     <ListGroup title="Расходы" aside={<StatusPill status="live" />}>
       {group.expenses.length === 0 && (
@@ -57,6 +59,12 @@ export const ExpensesSection = ({
           <ListRow
             key={expense.id}
             icon={CATEGORY_ICONS[expense.category]}
+            // Править может автор или плательщик — остальным строка не кликабельна
+            onClick={
+              expense.canEdit
+                ? () => void navigate(editExpensePath(group.id, expense.id))
+                : undefined
+            }
             title={expense.title}
             subtitle={[
               payer?.name ?? 'Участник',

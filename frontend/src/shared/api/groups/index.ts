@@ -1,5 +1,9 @@
 export {
   createExpense,
+  deleteExpense,
+  getExpense,
+  removeMember,
+  updateExpense,
   createGroup,
   getGroupOverview,
   getHomeOverview,
@@ -11,6 +15,7 @@ export {
   type CreateExpenseRequest,
   type CreateGroupRequest,
   type ExpenseCategory,
+  type ExpenseDetail,
   type GroupKind,
   type GroupSummary,
   type HomeOverview,
@@ -24,9 +29,18 @@ export {
   createGroupRequestSchema,
   groupOverviewSchema,
 } from './schemas'
-export { acceptInvite, addMember, createInvite, getInvitePreview, inviteKeys } from './members-api'
+export {
+  acceptInvite,
+  addMember,
+  createInvite,
+  getActiveInvites,
+  getInvitePreview,
+  inviteKeys,
+  revokeInvite,
+} from './members-api'
 export {
   type AcceptInviteResponse,
+  type ActiveInvite,
   type AddMemberRequest,
   type Invite,
   type InvitePreview,

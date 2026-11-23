@@ -29,7 +29,9 @@ export const ActivitySection = ({ items }: { items: Activity[] }): ReactElement 
           }
           title={activityTitle(item)}
           subtitle={
-            item.type === 'payment' ? (
+            item.type === 'cash' ? (
+              `${item.groupName} · наличными · ${formatRelativeDay(item.createdAt)}`
+            ) : item.type === 'payment' ? (
               <span className="home__onchain">
                 Подтверждено в Solana · {formatRelativeDay(item.createdAt)}
                 {item.signature && (

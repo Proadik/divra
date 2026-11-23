@@ -15,6 +15,7 @@
 import { type FiatCurrency, stablecoinMint } from '@/shared/config'
 import { isFlagOn } from '@/shared/lib/feature-flags'
 import { ApiError } from '../client'
+import { mockEvents } from './events'
 import { buildMemoTransaction, randomReference, verifySignedTransaction } from './solana'
 
 type Category = 'transport' | 'housing' | 'food' | 'groceries' | 'fun' | 'other'
@@ -29,6 +30,12 @@ type StoredExpense = {
   myShare: number
   original?: { currency: FiatCurrency; amount: number; rate: number } | null
   createdAt: string
+  /** Доли в центах: [memberId, cents]. У демо-расходов нет — достраиваем (sharesOf) */
+  shares?: Array<[string, number]>
+  splitMode?: 'equal' | 'exact' | 'percent' | 'shares'
+  /** Записал ты — можно править, даже если платил другой */
+  createdByMe?: boolean
+  updatedAt?: string | null
 }
 
 type StoredPayment = {
@@ -37,6 +44,8 @@ type StoredPayment = {
   toId: string
   amount: number
   createdAt: string
+  /** cash — получатель отметил возврат наличными; по умолчанию перевод в сети */
+  method?: 'onchain' | 'cash'
 }
 
 type StoredMember = {
@@ -47,6 +56,8 @@ type StoredMember = {
   status: 'pending' | 'active'
   /** Адрес кошелька; у старых записей поля нет — берём из DEMO_ADDRESSES */
   address?: string | null
+  /** Вышел или удалён: в списках не показываем, старые расходы ссылаются */
+  left?: boolean
 }
 
 type StoredRequest = {
@@ -54,6 +65,11 @@ type StoredRequest = {
   groupId: string
   memberId: string
   createdAt: string
+  /** Сумма в центах — чтобы закрыть запрос наличными */
+  amountCents?: number
+  paidAt?: string | null
+  cancelledAt?: string | null
+  remindedAt?: string | null
 }
 
 type StoredGroup = {
@@ -75,6 +91,8 @@ type StoredInvite = {
   claimMemberId: string | null
   claimMemberName: string | null
   expiresAt: number
+  createdAt?: string
+  revoked?: boolean
 }
 
 type MockDb = {
@@ -83,6 +101,19 @@ type MockDb = {
   invites: StoredInvite[]
   /** Запросы на оплату — чтобы показать «запрос вчера» */
   requests?: StoredRequest[]
+  /** Переводы мимо Divra, замеченные «в сети» (в моке — по кнопке имитации) */
+  detected?: StoredDetected[]
+}
+
+type StoredDetected = {
+  id: string
+  signature: string
+  /** id участника — в демо-группах у одного человека одинаковый id */
+  fromMemberId: string
+  fromName: string
+  amount: number
+  createdAt: string
+  status: 'pending' | 'applied' | 'dismissed'
 }
 
 /** Как выглядела база до появления нескольких групп — переносим в «Бурабай» */
@@ -107,6 +138,7 @@ const DEMO_ADDRESSES: Record<string, string> = {
 /** Как зовут пользователя мока в чужих глазах (в приглашениях и запросах) */
 const MY_NAME = 'Адиль'
 const REQUEST_TTL_MS = 14 * 24 * 3_600_000
+const REMIND_INTERVAL_MS = 24 * 3_600_000
 const MAIN_GROUP = 'burabay'
 /** Так называлась единственная группа раньше: старые ссылки-приглашения ведут сюда */
 const LEGACY_GROUP = 'current'
@@ -459,6 +491,9 @@ const findInvite = (db: MockDb, code: string): StoredInvite => {
   if (!invite) {
     return fail(404, 'Приглашение не найдено')
   }
+  if (invite.revoked) {
+    return fail(410, 'Приглашение отозвано')
+  }
   if (invite.expiresAt < Date.now()) {
     return fail(410, 'Срок приглашения истёк')
   }
@@ -497,6 +532,98 @@ const balanceCents = (group: StoredGroup): number =>
     0,
   )
 
+const activeMembers = (group: StoredGroup): StoredMember[] =>
+  group.members.filter((item) => !item.left)
+
+const canEditOf = (expense: StoredExpense): boolean =>
+  expense.createdByMe === true || expense.paidById === ME
+
+type ExpenseView = Omit<
+  StoredExpense,
+  'shares' | 'splitMode' | 'createdByMe' | 'updatedAt' | 'original'
+> & { original: StoredExpense['original']; canEdit: boolean }
+
+const expenseView = (expense: StoredExpense): ExpenseView => ({
+  id: expense.id,
+  title: expense.title,
+  category: expense.category,
+  paidById: expense.paidById,
+  amount: expense.amount,
+  myShare: expense.myShare,
+  original: expense.original ?? null,
+  createdAt: expense.createdAt,
+  canEdit: canEditOf(expense),
+})
+
+/**
+ * Доли расхода в центах. У демо-расходов их нет: твоя доля известна, остаток делим поровну
+ * между остальными участниками.
+ */
+const sharesOf = (group: StoredGroup, expense: StoredExpense): Array<[string, number]> => {
+  if (expense.shares) {
+    return expense.shares
+  }
+  const mine = cents(expense.myShare)
+  const others = activeMembers(group).filter((item) => item.id !== ME)
+  const rest = cents(expense.amount) - mine
+  const base = others.length > 0 ? Math.floor(rest / others.length) : 0
+  let extra = rest - base * others.length
+  const shares: Array<[string, number]> = others.map((item) => {
+    const value = base + (extra > 0 ? 1 : 0)
+    extra -= 1
+    return [item.id, value]
+  })
+  return mine > 0 ? [[ME, mine], ...shares] : shares
+}
+
+/** Доли расхода в журнале: sign = 1 — добавить долги, -1 — убрать (правка, удаление) */
+const applyShares = (
+  group: StoredGroup,
+  paidById: string,
+  shares: Array<[string, number]>,
+  sign: 1 | -1,
+): void => {
+  for (const [memberId, value] of shares) {
+    if (memberId !== paidById && value > 0) {
+      if (sign === 1) {
+        addDebt(group, memberId, paidById, value)
+      } else {
+        addDebt(group, paidById, memberId, value)
+      }
+    }
+  }
+}
+
+const hasDebts = (group: StoredGroup, memberId: string): boolean =>
+  group.ledger.some(([key, value]) => value > 0 && key.split('>').includes(memberId))
+
+const findExpense = (group: StoredGroup, expenseId: string): StoredExpense =>
+  group.expenses.find((item) => item.id === expenseId) ?? fail(404, 'Расход не найден')
+
+type ExpenseInput = {
+  title: string
+  category: Category
+  paidById: string
+  amount: number
+  splitMode?: StoredExpense['splitMode']
+  original?: StoredExpense['original']
+  shares: Array<{ memberId: string; amount: number }>
+}
+
+const checkMembers = (group: StoredGroup, input: ExpenseInput): void => {
+  const ids = new Set(activeMembers(group).map((item) => item.id))
+  if (
+    ![input.paidById, ...input.shares.map((share) => share.memberId)].every((id) => ids.has(id))
+  ) {
+    fail(422, 'Участник не из этой группы или вышел из неё')
+  }
+}
+
+const findRequest = (db: MockDb, groupId: string, code: string): StoredRequest =>
+  (db.requests ?? []).find(
+    (item) => item.groupId === groupId && item.code === code && !item.cancelledAt,
+  ) ?? fail(404, 'Запрос не найден')
+
 const lastActivityAt = (group: StoredGroup): string =>
   [
     group.createdAt,
@@ -519,7 +646,7 @@ type Summary = {
 
 type ActivityItem = {
   id: string
-  type: 'expense' | 'payment'
+  type: 'expense' | 'payment' | 'cash'
   groupId: string
   groupName: string
   actor: Person
@@ -533,7 +660,7 @@ const summaryOf = (group: StoredGroup): Summary => ({
   id: group.id,
   name: group.name,
   kind: group.kind,
-  membersCount: group.members.length,
+  membersCount: activeMembers(group).length,
   myBalance: balanceCents(group) / 100,
   lastActivityAt: lastActivityAt(group),
 })
@@ -561,7 +688,7 @@ const activityOf = (group: StoredGroup): ActivityItem[] => [
   })),
   ...group.payments.map((payment): ActivityItem => ({
     id: `${group.id}:${payment.id}`,
-    type: 'payment',
+    type: payment.method === 'cash' ? 'cash' : 'payment',
     groupId: group.id,
     groupName: group.name,
     actor: personOf(group, payment.fromId),
@@ -571,6 +698,52 @@ const activityOf = (group: StoredGroup): ActivityItem[] => [
     createdAt: payment.createdAt,
   })),
 ]
+
+// ── История: демо-переводы ──────────────────────────────────────────────────
+
+const randomPad = '5ZcNTmJLsgCxw1pJ'.repeat(6)
+
+/**
+ * Старые переводы демо-кошелька: от незнакомых адресов и друзьям. Время — от «сейчас»,
+ * поэтому список стабилен в пределах сессии и его можно листать (бесконечная прокрутка).
+ */
+type MockHistoryItem = {
+  id: string
+  signature: string
+  token: 'USDC' | 'USDT'
+  amount: number
+  direction: 'in' | 'out'
+  counterparty: { name: string | null; address: string | null }
+  countedIn: string | null
+  suggested: boolean
+  createdAt: string
+}
+
+const demoChainHistory = (): MockHistoryItem[] => {
+  const strangers = [
+    '3Ftc9QkU8bNt7S2hWx6gK1yPq4LmZr5VdE8aJc2BnH7s',
+    '7mKdV2pXq9Lw4Rt6Yh1Nb8Zc3Sf5Gj2Ua9Ee4Wk6Qx1M',
+    '9eHs4Tn2Bv7Lq1Xc6Zp3Wm8Ka5Rd2Uj9Fy4Gt6Nb1Vc3',
+  ]
+  return Array.from({ length: 36 }, (_, index) => {
+    const incoming = index % 3 !== 1
+    const friend = index % 4 === 0 ? (index % 8 === 0 ? 'Дана' : 'Тимур') : null
+    return {
+      id: `demo-${String(index).padStart(2, '0')}`,
+      signature: (`demo${index}` + randomPad.repeat(2)).slice(0, 88),
+      token: index % 5 === 0 ? ('USDT' as const) : ('USDC' as const),
+      amount: Math.round((5 + ((index * 37) % 140) + (index % 4) * 0.25) * 100) / 100,
+      direction: incoming ? ('in' as const) : ('out' as const),
+      counterparty: {
+        name: friend,
+        address: friend ? null : (strangers[index % strangers.length] ?? null),
+      },
+      countedIn: null,
+      suggested: false,
+      createdAt: hoursAgo(72 + index * 11),
+    }
+  })
+}
 
 // ── API ─────────────────────────────────────────────────────────────────────
 
@@ -625,34 +798,29 @@ export const mockGroupsBackend = {
       name: group.name,
       kind: group.kind,
       currency: 'USDC',
-      members: group.members.map(publicMember),
+      members: activeMembers(group).map(publicMember),
       myBalance: balanceCents(group) / 100,
       debts: myDebts(group),
       transfersBeforeSimplify: group.transfersBeforeSimplify,
-      expenses: [...group.expenses].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      expenses: [...group.expenses]
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map(expenseView),
     }
   },
 
-  async createExpense(
-    groupId: string,
-    input: {
-      title: string
-      category: Category
-      paidById: string
-      amount: number
-      original?: StoredExpense['original']
-      shares: Array<{ memberId: string; amount: number }>
-    },
-  ) {
+  async createExpense(groupId: string, input: ExpenseInput) {
     await delay(400)
     const db = load()
     const group = findGroup(db, groupId)
-    for (const share of input.shares) {
-      if (share.memberId !== input.paidById && share.amount > 0) {
-        addDebt(group, share.memberId, input.paidById, cents(share.amount))
-        group.transfersBeforeSimplify += 1
-      }
-    }
+    checkMembers(group, input)
+    const shares = input.shares.map((share): [string, number] => [
+      share.memberId,
+      cents(share.amount),
+    ])
+    applyShares(group, input.paidById, shares, 1)
+    group.transfersBeforeSimplify += shares.filter(
+      ([memberId, value]) => memberId !== input.paidById && value > 0,
+    ).length
     const expense: StoredExpense = {
       id: `e${Date.now()}`,
       title: input.title.trim(),
@@ -662,10 +830,108 @@ export const mockGroupsBackend = {
       myShare: input.shares.find((share) => share.memberId === ME)?.amount ?? 0,
       original: input.original ?? null,
       createdAt: new Date().toISOString(),
+      shares,
+      splitMode: input.splitMode ?? 'equal',
+      createdByMe: true,
+      updatedAt: null,
     }
     group.expenses.push(expense)
     save(db)
-    return expense
+    return expenseView(expense)
+  },
+
+  async getExpense(groupId: string, expenseId: string) {
+    await delay(200)
+    const group = findGroup(load(), groupId)
+    const expense = findExpense(group, expenseId)
+    return {
+      ...expenseView(expense),
+      splitMode: expense.splitMode ?? 'equal',
+      shares: sharesOf(group, expense).map(([memberId, value]) => ({
+        memberId,
+        amount: value / 100,
+      })),
+      updatedAt: expense.updatedAt ?? null,
+    }
+  },
+
+  async updateExpense(groupId: string, expenseId: string, input: ExpenseInput) {
+    await delay(400)
+    const db = load()
+    const group = findGroup(db, groupId)
+    const expense = findExpense(group, expenseId)
+    if (!canEditOf(expense)) {
+      return fail(403, 'Править расход может только автор или плательщик')
+    }
+    checkMembers(group, input)
+    applyShares(group, expense.paidById, sharesOf(group, expense), -1)
+    const shares = input.shares.map((share): [string, number] => [
+      share.memberId,
+      cents(share.amount),
+    ])
+    applyShares(group, input.paidById, shares, 1)
+    Object.assign(expense, {
+      title: input.title.trim(),
+      category: input.category,
+      paidById: input.paidById,
+      amount: input.amount,
+      myShare: input.shares.find((share) => share.memberId === ME)?.amount ?? 0,
+      original: input.original ?? null,
+      shares,
+      splitMode: input.splitMode ?? 'equal',
+      updatedAt: new Date().toISOString(),
+    })
+    save(db)
+    return expenseView(expense)
+  },
+
+  async deleteExpense(groupId: string, expenseId: string) {
+    await delay(300)
+    const db = load()
+    const group = findGroup(db, groupId)
+    const expense = findExpense(group, expenseId)
+    if (!canEditOf(expense)) {
+      return fail(403, 'Удалить расход может только автор или плательщик')
+    }
+    applyShares(group, expense.paidById, sharesOf(group, expense), -1)
+    group.expenses = group.expenses.filter((item) => item.id !== expenseId)
+    save(db)
+  },
+
+  /** Свой id — выйти из группы; чужой — удалить участника без кошелька. Только без долгов */
+  async removeMember(groupId: string, memberId: string) {
+    await delay(300)
+    const db = load()
+    const group = findGroup(db, groupId)
+    const target =
+      activeMembers(group).find((item) => item.id === memberId) ?? fail(404, 'Участник не найден')
+    const leaving = target.id === ME
+    if (!leaving && target.status === 'active') {
+      return fail(403, 'Участника с кошельком удалить нельзя — он может выйти только сам')
+    }
+    if (hasDebts(group, target.id)) {
+      return fail(409, 'Сначала рассчитайтесь: у участника есть долги или ему должны')
+    }
+    const now = new Date().toISOString()
+    if (leaving) {
+      // Ты вышел — группа пропадает из твоего списка
+      db.groups = db.groups.filter((item) => item.id !== group.id)
+      db.requests = (db.requests ?? []).filter((item) => item.groupId !== group.id)
+    } else {
+      target.left = true
+      for (const invite of db.invites) {
+        if (invite.groupId === group.id && invite.claimMemberId === target.id) {
+          invite.revoked = true
+        }
+      }
+      for (const item of db.requests ?? []) {
+        if (item.groupId === group.id && item.memberId === target.id && !item.paidAt) {
+          item.cancelledAt ??= now
+        }
+      }
+    }
+    save(db)
+    return { left: leaving }
   },
 
   async addMember(groupId: string, input: { displayName: string }) {
@@ -673,7 +939,7 @@ export const mockGroupsBackend = {
     const db = load()
     const group = findGroup(db, groupId)
     const name = input.displayName.trim()
-    if (group.members.some((item) => item.name.toLowerCase() === name.toLowerCase())) {
+    if (activeMembers(group).some((item) => item.name.toLowerCase() === name.toLowerCase())) {
       return fail(409, `«${name}» уже есть в группе`)
     }
     const added: StoredMember = { ...member(`m${Date.now()}`, name), status: 'pending' }
@@ -705,6 +971,7 @@ export const mockGroupsBackend = {
       claimMemberId: claim?.id ?? null,
       claimMemberName: claim?.name ?? null,
       expiresAt,
+      createdAt: new Date().toISOString(),
     })
     save(db)
     return {
@@ -725,10 +992,43 @@ export const mockGroupsBackend = {
       groupId: group.id,
       groupName: group.name,
       invitedByName: 'Адиль',
-      membersCount: group.members.length,
+      membersCount: activeMembers(group).length,
       claimMemberName: invite.claimMemberName,
       expiresAt: new Date(invite.expiresAt).toISOString(),
     }
+  },
+
+  async getActiveInvites(groupId: string) {
+    await delay(200)
+    const db = load()
+    const group = findGroup(db, groupId)
+    const now = Date.now()
+    return db.invites
+      .filter((item) => item.groupId === group.id && !item.revoked && item.expiresAt > now)
+      .map((item) => ({
+        code: item.code,
+        url: `${window.location.origin}/join/${item.code}`,
+        expiresAt: new Date(item.expiresAt).toISOString(),
+        claimMemberId: item.claimMemberId,
+        invitedByName: MY_NAME,
+        claimMemberName: item.claimMemberName,
+        uses: 0,
+        createdAt: item.createdAt ?? new Date(item.expiresAt - INVITE_TTL_MS).toISOString(),
+      }))
+  },
+
+  async revokeInvite(groupId: string, code: string) {
+    await delay(200)
+    const db = load()
+    const group = findGroup(db, groupId)
+    const invite = db.invites.find(
+      (item) => item.groupId === group.id && item.code === code && !item.revoked,
+    )
+    if (!invite) {
+      return fail(404, 'Приглашение не найдено')
+    }
+    invite.revoked = true
+    save(db)
   },
 
   /**
@@ -921,13 +1221,15 @@ export const mockGroupsBackend = {
     const now = new Date().toISOString()
     db.requests = [
       ...(db.requests ?? []).filter(
-        (item) => !(item.groupId === group.id && input.memberIds.includes(item.memberId)),
+        (item) =>
+          !(item.groupId === group.id && input.memberIds.includes(item.memberId) && !item.paidAt),
       ),
       ...created.map((item) => ({
         code: item.code,
         groupId: group.id,
         memberId: item.memberId,
         createdAt: now,
+        amountCents: cents(item.amount),
       })),
     ]
     save(db)
@@ -939,7 +1241,7 @@ export const mockGroupsBackend = {
     await delay(150)
     const now = Date.now()
     return (load().requests ?? [])
-      .filter((item) => item.groupId === groupId)
+      .filter((item) => item.groupId === groupId && !item.cancelledAt)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .flatMap((item) => {
         const payload = unpackCode(item.code) as RequestPayload | null
@@ -956,13 +1258,264 @@ export const mockGroupsBackend = {
             token: payload.k,
             url: `${window.location.origin}/r/${item.code}`,
             solanaPayUrl: solanaPayUrl(payload, mint),
-            status: payload.e * 1000 < now ? ('expired' as const) : ('open' as const),
+            status: item.paidAt
+              ? ('paid' as const)
+              : payload.e * 1000 < now
+                ? ('expired' as const)
+                : ('open' as const),
             createdAt: item.createdAt,
             expiresAt: new Date(payload.e * 1000).toISOString(),
-            paidAt: null,
+            paidAt: item.paidAt ?? null,
+            signature: null,
+            remindedAt: item.remindedAt ?? null,
           },
         ]
       })
+  },
+
+  async cancelPaymentRequest(groupId: string, code: string) {
+    await delay(200)
+    const db = load()
+    const request = findRequest(db, groupId, code)
+    if (request.paidAt) {
+      return fail(409, 'Запрос уже оплачен')
+    }
+    request.cancelledAt = new Date().toISOString()
+    save(db)
+  },
+
+  async remindPaymentRequest(groupId: string, code: string) {
+    await delay(200)
+    const db = load()
+    const request = findRequest(db, groupId, code)
+    const payload = unpackCode(code) as RequestPayload | null
+    if (!payload || request.paidAt || payload.e * 1000 < Date.now()) {
+      return fail(409, 'Запрос уже оплачен, отменён или истёк — напоминать не о чем')
+    }
+    const now = Date.now()
+    if (request.remindedAt && now - Date.parse(request.remindedAt) < REMIND_INTERVAL_MS) {
+      return fail(429, 'Уже напоминал за последние сутки — следующее напоминание завтра')
+    }
+    request.remindedAt = new Date(now).toISOString()
+    save(db)
+    const url = `${window.location.origin}/r/${code}`
+    const amount = payload.s.toFixed(2).replace(/\.00$/, '')
+    return {
+      code,
+      url,
+      text: `${payload.t}, напоминаю про долг в «${payload.gn}»: ${amount} ${payload.k}. Оплатить можно по ссылке: ${url}`,
+      remindedAt: request.remindedAt,
+      nextReminderAt: new Date(now + REMIND_INTERVAL_MS).toISOString(),
+    }
+  },
+
+  /** Получатель отмечает возврат наличными: долг memberId → ты уменьшается */
+  async recordCashPayment(groupId: string, input: { memberId: string; amount: number }) {
+    await delay(300)
+    const db = load()
+    const group = findGroup(db, groupId)
+    const debtor = activeMembers(group).find((item) => item.id === input.memberId && item.id !== ME)
+    if (!debtor) {
+      return fail(422, 'Участник не из этой группы')
+    }
+    const owed = new Map(group.ledger).get(`${debtor.id}>${ME}`) ?? 0
+    if (owed <= 0) {
+      return fail(409, 'Этот участник тебе ничего не должен')
+    }
+    const amount = cents(input.amount)
+    if (amount > owed) {
+      return fail(422, `Больше долга: должен ${(owed / 100).toFixed(2)}`)
+    }
+    addDebt(group, ME, debtor.id, amount)
+    const now = new Date().toISOString()
+    group.payments.push({
+      id: `c${Date.now()}`,
+      fromId: debtor.id,
+      toId: ME,
+      amount: amount / 100,
+      createdAt: now,
+      method: 'cash',
+    })
+    for (const item of db.requests ?? []) {
+      if (
+        item.groupId === group.id &&
+        item.memberId === debtor.id &&
+        !item.paidAt &&
+        !item.cancelledAt
+      ) {
+        if (amount >= (item.amountCents ?? Number.POSITIVE_INFINITY)) {
+          item.paidAt = now
+        } else {
+          item.cancelledAt = now
+        }
+      }
+    }
+    save(db)
+    return { memberId: debtor.id, amount: amount / 100, remaining: (owed - amount) / 100 }
+  },
+
+  // ── История переводов в сети ─────────────────────────────────────────────
+
+  /**
+   * «История»: переводы в сети — по запросам и расчётам, переводы мимо Divra и (в демо) старые
+   * переводы с чужих кошельков, чтобы было что листать. Курсор мока — просто смещение.
+   */
+  async getHistory(cursor: string | undefined, limit: number) {
+    await delay(250)
+    const db = load()
+    const signatureOf = (id: string): string => `${id}${randomPad}${randomPad}`.slice(0, 88)
+    const items = [
+      ...db.groups.flatMap((group) =>
+        group.payments
+          .filter(
+            (payment) =>
+              payment.method !== 'cash' && (payment.fromId === ME || payment.toId === ME),
+          )
+          .map((payment) => {
+            const other = personOf(group, payment.toId === ME ? payment.fromId : payment.toId)
+            return {
+              id: `${group.id}:${payment.id}`,
+              signature: signatureOf(payment.id),
+              token: 'USDC' as const,
+              amount: payment.amount,
+              direction: payment.toId === ME ? ('in' as const) : ('out' as const),
+              counterparty: { name: other.name, address: null },
+              countedIn: group.name,
+              suggested: false,
+              createdAt: payment.createdAt,
+            }
+          }),
+      ),
+      ...(db.detected ?? [])
+        .filter((item) => item.status !== 'applied')
+        .map((item) => ({
+          id: item.id,
+          signature: item.signature,
+          token: 'USDC' as const,
+          amount: item.amount,
+          direction: 'in' as const,
+          counterparty: { name: item.fromName, address: null },
+          countedIn: null,
+          suggested: item.status === 'pending',
+          createdAt: item.createdAt,
+        })),
+      ...(withDemo() ? demoChainHistory() : []),
+    ].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+    const offset = Math.max(0, Number(cursor ?? 0) || 0)
+    const page = items.slice(offset, offset + limit)
+    return {
+      items: page,
+      nextCursor: offset + limit < items.length ? String(offset + limit) : null,
+    }
+  },
+
+  // ── Переводы мимо Divra ──────────────────────────────────────────────────
+
+  /** Подсказки: где отправитель сейчас должен тебе — туда можно засчитать */
+  async getDetectedTransfers() {
+    await delay(200)
+    const db = load()
+    return (db.detected ?? [])
+      .filter((item) => item.status === 'pending')
+      .flatMap((item) => {
+        const groups = db.groups
+          .map((group) => ({
+            groupId: group.id,
+            groupName: group.name,
+            owed: (new Map(group.ledger).get(`${item.fromMemberId}>${ME}`) ?? 0) / 100,
+          }))
+          .filter((group) => group.owed > 0)
+          .sort((a, b) => b.owed - a.owed)
+        if (groups.length === 0) {
+          return []
+        }
+        return [
+          {
+            id: item.id,
+            signature: item.signature,
+            token: 'USDC' as const,
+            amount: item.amount,
+            fromName: item.fromName,
+            createdAt: item.createdAt,
+            groups,
+          },
+        ]
+      })
+  },
+
+  async applyDetectedTransfer(id: string, groupId: string) {
+    await delay(350)
+    const db = load()
+    const item = (db.detected ?? []).find(
+      (detected) => detected.id === id && detected.status === 'pending',
+    )
+    if (!item) {
+      return fail(404, 'Перевод не найден')
+    }
+    const group = findGroup(db, groupId)
+    const owed = new Map(group.ledger).get(`${item.fromMemberId}>${ME}`) ?? 0
+    if (owed <= 0) {
+      return fail(409, 'В этой группе он тебе больше ничего не должен')
+    }
+    const amount = Math.min(cents(item.amount), owed)
+    addDebt(group, ME, item.fromMemberId, amount)
+    group.payments.push({
+      id: `t${Date.now()}`,
+      fromId: item.fromMemberId,
+      toId: ME,
+      amount: amount / 100,
+      createdAt: new Date().toISOString(),
+    })
+    item.status = 'applied'
+    save(db)
+    mockEvents.emit({ type: 'group.changed', groupId: group.id })
+    return { groupId: group.id, amount: amount / 100, remaining: (owed - amount) / 100 }
+  },
+
+  async dismissDetectedTransfer(id: string) {
+    await delay(200)
+    const db = load()
+    const item = (db.detected ?? []).find(
+      (detected) => detected.id === id && detected.status === 'pending',
+    )
+    if (!item) {
+      return fail(404, 'Перевод не найден')
+    }
+    item.status = 'dismissed'
+    save(db)
+  },
+
+  /**
+   * Имитация: должник перевёл тебе из кошелька, мимо Divra. Настоящий бэкенд замечает такие
+   * переводы в потоке LaserStream; мок берёт первого, кто тебе должен, и половину долга.
+   */
+  async simulateDetectedTransfer() {
+    await delay(150)
+    const db = load()
+    const debt = db.groups
+      .flatMap((group) =>
+        group.ledger.flatMap(([key, value]) => {
+          const [fromId = '', toId = ''] = key.split('>')
+          const from = activeMembers(group).find((item) => item.id === fromId)
+          return toId === ME && value > 0 && from ? [{ from, value }] : []
+        }),
+      )
+      .at(0)
+    if (!debt) {
+      return fail(409, 'Тебе никто не должен — переводить некому')
+    }
+    const detected: StoredDetected = {
+      id: `d${Date.now()}`,
+      signature: randomReference() + randomReference(),
+      fromMemberId: debt.from.id,
+      fromName: debt.from.name,
+      amount: Math.max(1, Math.round(debt.value / 200)),
+      createdAt: new Date().toISOString(),
+      status: 'pending',
+    }
+    db.detected = [...(db.detected ?? []), detected]
+    save(db)
+    mockEvents.emit({ type: 'transfer.detected', id: detected.id })
   },
 
   async getPaymentRequest(code: string) {
@@ -972,7 +1525,12 @@ export const mockGroupsBackend = {
     if (!payload || typeof payload.a !== 'string' || typeof payload.s !== 'number') {
       return fail(404, 'Запрос не найден')
     }
-    if (payload.e * 1000 < Date.now()) {
+    // Код самодостаточный, но отмену и оплату наличными видно только в своей базе
+    const stored = (load().requests ?? []).find((item) => item.code === code)
+    if (stored?.cancelledAt && !stored.paidAt) {
+      return fail(410, 'Запрос отменён')
+    }
+    if (!stored?.paidAt && payload.e * 1000 < Date.now()) {
       return fail(410, 'Срок запроса истёк')
     }
     const mint = stablecoinMint(payload.k)
@@ -980,6 +1538,9 @@ export const mockGroupsBackend = {
       return fail(400, `${payload.k} нет в этой сети Solana`)
     }
     return {
+      status: stored?.paidAt ? ('paid' as const) : ('open' as const),
+      paidAt: stored?.paidAt ?? null,
+      signature: null,
       code,
       fromName: payload.f,
       fromAddress: payload.a,

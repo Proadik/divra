@@ -1,7 +1,9 @@
 export {
   authKeys,
+  deleteAccount,
   getMe,
   refreshAccessToken,
+  updateProfile,
   requestWalletChallenge,
   signOutSession,
   verifyWalletChallenge,
@@ -13,6 +15,7 @@ export {
   type WalletChallengeRequest,
   type WalletSession,
   type WalletVerifyRequest,
+  updateProfileSchema,
   walletChallengeSchema,
   walletSessionSchema,
 } from './schemas'

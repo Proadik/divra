@@ -139,7 +139,10 @@ export const useRequest = (groupId: string): RequestModel => {
     error: create.error,
     requests: create.data,
     sent: sent.data ?? [],
-    reopened,
+    // Свежая версия из списка: после напоминания у запроса новая отметка remindedAt
+    reopened: reopened
+      ? (sent.data?.find((item) => item.code === reopened.code) ?? reopened)
+      : null,
     reopen: setReopened,
   }
 }

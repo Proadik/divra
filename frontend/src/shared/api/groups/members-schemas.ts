@@ -31,6 +31,14 @@ export const invitePreviewSchema = z.object({
   expiresAt: z.iso.datetime(),
 })
 
+/** Действующая ссылка в списке группы — её можно отозвать */
+export const activeInviteSchema = inviteSchema.extend({
+  invitedByName: z.string().min(1),
+  claimMemberName: z.string().nullable(),
+  uses: z.number().int().nonnegative(),
+  createdAt: z.iso.datetime(),
+})
+
 export const acceptInviteResponseSchema = z.object({
   groupId: z.string().min(1),
   memberId: z.string().min(1),
@@ -41,5 +49,6 @@ export const acceptInviteResponseSchema = z.object({
 export type AddMemberRequest = z.infer<typeof addMemberRequestSchema>
 export type CreateInviteRequest = z.infer<typeof createInviteRequestSchema>
 export type Invite = z.infer<typeof inviteSchema>
+export type ActiveInvite = z.infer<typeof activeInviteSchema>
 export type InvitePreview = z.infer<typeof invitePreviewSchema>
 export type AcceptInviteResponse = z.infer<typeof acceptInviteResponseSchema>

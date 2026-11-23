@@ -96,8 +96,35 @@ export const sentPaymentRequestSchema = paymentRequestSchema.extend({
   createdAt: z.iso.datetime(),
   expiresAt: z.iso.datetime(),
   paidAt: z.iso.datetime().nullable(),
-  /** Транзакция, которой запрос оплачен */
+  /** Транзакция, которой запрос оплачен; закрыт наличными — null */
   signature: z.string().nullable().default(null),
+  /** Когда последний раз напоминали; следующее — не раньше чем через сутки */
+  remindedAt: z.iso.datetime().nullable().default(null),
+})
+
+/** Готовое напоминание: текст со ссылкой, его отправляешь сам (Telegram, WhatsApp) */
+export const paymentReminderSchema = z.object({
+  code: z.string().min(8),
+  text: z.string().min(1),
+  url: z.url(),
+  remindedAt: z.iso.datetime(),
+  nextReminderAt: z.iso.datetime(),
+})
+
+/** Получатель отмечает, что долг вернули наличными */
+export const cashPaymentRequestSchema = z.object({
+  memberId: z.string().min(1),
+  amount: z
+    .number()
+    .positive('Сумма должна быть больше нуля')
+    .max(1_000_000, 'Сумма больше 1 000 000 — проверь ввод'),
+})
+
+export const cashPaymentResultSchema = z.object({
+  memberId: z.string().min(1),
+  amount,
+  /** Сколько ещё должен после этой записи */
+  remaining: amount,
 })
 
 /** Что видит друг по ссылке, без входа */
@@ -139,3 +166,6 @@ export type CreatePaymentRequests = z.infer<typeof createPaymentRequestsSchema>
 export type PaymentRequest = z.infer<typeof paymentRequestSchema>
 export type PaymentRequestPreview = z.infer<typeof paymentRequestPreviewSchema>
 export type SentPaymentRequest = z.infer<typeof sentPaymentRequestSchema>
+export type PaymentReminder = z.infer<typeof paymentReminderSchema>
+export type CashPaymentRequest = z.infer<typeof cashPaymentRequestSchema>
+export type CashPaymentResult = z.infer<typeof cashPaymentResultSchema>

@@ -9,12 +9,16 @@ import {
   type SplitMode,
   createExpense,
   createExpenseRequestSchema,
+  deleteExpense,
+  getExpense,
   getGroupOverview,
   getRates,
   groupKeys,
   ratesKeys,
+  updateExpense,
 } from '@/shared/api'
 import { FIAT_DECIMALS, type FiatCurrency } from '@/shared/config'
+import { editValuesOf } from '../lib/edit-values'
 import { type SplitResult, computeSplit, distribute, toCents } from '../lib/split'
 import { parseAmount, parseSplitValue } from '../lib/masks'
 
@@ -33,8 +37,14 @@ export type ExpenseFormValues = {
 }
 
 export type ExpenseForm = {
+  /** edit — правим существующий расход */
+  kind: 'create' | 'edit'
   members: readonly GroupMember[] | undefined
   isLoading: boolean
+  /** Расход не загрузился: удалён, нет прав или сеть */
+  loadError: Error | null
+  /** Правка: можно ли править (автор или плательщик) */
+  canEdit: boolean
   values: ExpenseFormValues
   /** Доли в валюте ввода, в центах этой валюты */
   split: SplitResult
@@ -53,6 +63,10 @@ export type ExpenseForm = {
   submit: () => void
   isSubmitting: boolean
   submitError: Error | null
+  /** Удалить расход (только в режиме правки) */
+  remove: () => void
+  isRemoving: boolean
+  removeError: Error | null
 }
 
 const SPLIT_MESSAGES: Record<Exclude<SplitResult, { ok: true }>['reason'], string | null> = {
@@ -63,14 +77,30 @@ const SPLIT_MESSAGES: Record<Exclude<SplitResult, { ok: true }>['reason'], strin
   'no-shares': 'Укажи доли участников',
 }
 
-export const useExpenseForm = (groupId: string, onCreated: () => void): ExpenseForm => {
+/**
+ * Форма расхода. С expenseId — правка: значения берутся из сохранённого расхода, а сумма
+ * в валюте ввода пересчитывается по его курсу, пока валюту не сменили.
+ */
+export const useExpenseForm = (
+  groupId: string,
+  onDone: () => void,
+  expenseId?: string,
+): ExpenseForm => {
   const queryClient = useQueryClient()
   const overview = useQuery({
     queryKey: groupKeys.overview(groupId),
     queryFn: () => getGroupOverview(groupId),
   })
+  const detail = useQuery({
+    queryKey: groupKeys.expense(groupId, expenseId ?? ''),
+    queryFn: () => getExpense(groupId, expenseId ?? ''),
+    enabled: Boolean(expenseId),
+    // Форма правки должна видеть расход как есть сейчас
+    staleTime: 0,
+  })
   const members = overview.data?.members
   const me = members?.find((member) => member.isMe)
+  const edit = detail.data && members ? editValuesOf(detail.data, members) : null
 
   const defaultCurrency = usePreferences((state) => state.inputCurrency)
   const [touched, setTouched] = useState<Partial<ExpenseFormValues>>({})
@@ -84,6 +114,7 @@ export const useExpenseForm = (groupId: string, onCreated: () => void): ExpenseF
     mode: 'equal',
     selected: members?.map((member) => member.id) ?? [],
     splitTexts: {},
+    ...edit?.values,
     ...touched,
   }
 
@@ -116,9 +147,11 @@ export const useExpenseForm = (groupId: string, onCreated: () => void): ExpenseF
     staleTime: RATES_STALE_MS,
   })
   const isUsd = values.currency === 'USD'
-  const rate = isUsd ? 1 : (rates.data?.rates[values.currency] ?? null)
+  // Правка в той же валюте — курс расхода, а не сегодняшний: иначе сумма в долларах «поплывёт»
+  const fixedRate = edit && edit.currency === values.currency ? edit.rate : null
+  const rate = isUsd ? 1 : (fixedRate ?? rates.data?.rates[values.currency] ?? null)
   const rateStatusOf = (): ExpenseForm['rateStatus'] => {
-    if (isUsd) {
+    if (isUsd || fixedRate) {
       return 'ready'
     }
     if (rates.isPending) {
@@ -168,17 +201,30 @@ export const useExpenseForm = (groupId: string, onCreated: () => void): ExpenseF
   const payload = buildPayload()
 
   const mutation = useMutation({
-    mutationKey: ['expenses', 'create', groupId],
-    mutationFn: (data: CreateExpenseRequest) => createExpense(groupId, data),
+    mutationKey: ['expenses', expenseId ? 'update' : 'create', groupId],
+    mutationFn: (data: CreateExpenseRequest) =>
+      expenseId ? updateExpense(groupId, expenseId, data) : createExpense(groupId, data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: groupKeys.all })
-      onCreated()
+      onDone()
+    },
+  })
+  const removal = useMutation({
+    mutationKey: ['expenses', 'delete', groupId],
+    mutationFn: () => deleteExpense(groupId, expenseId ?? ''),
+    onSuccess: async () => {
+      queryClient.removeQueries({ queryKey: groupKeys.expense(groupId, expenseId ?? '') })
+      await queryClient.invalidateQueries({ queryKey: groupKeys.all })
+      onDone()
     },
   })
 
   return {
+    kind: expenseId ? 'edit' : 'create',
     members,
-    isLoading: overview.isPending,
+    isLoading: overview.isPending || (Boolean(expenseId) && detail.isPending),
+    loadError: detail.error,
+    canEdit: detail.data?.canEdit ?? !expenseId,
     values,
     split,
     fractionDigits,
@@ -202,5 +248,12 @@ export const useExpenseForm = (groupId: string, onCreated: () => void): ExpenseF
     },
     isSubmitting: mutation.isPending,
     submitError: mutation.error,
+    remove: () => {
+      if (expenseId && !removal.isPending) {
+        removal.mutate()
+      }
+    },
+    isRemoving: removal.isPending,
+    removeError: removal.error,
   }
 }

@@ -1,9 +1,10 @@
-import type { ReactElement } from 'react'
+import { type ReactElement, useState } from 'react'
 import type { Money } from '@/entities/currency'
-import type { GroupOverview } from '@/shared/api'
+import type { GroupMember, GroupOverview } from '@/shared/api'
 import { pluralize } from '@/shared/lib/format'
 import { Amount, Avatar, ListGroup, ListRow } from '@/shared/ui'
 import { findMember, toneOf } from '../lib/group'
+import { CashDialog } from './CashDialog'
 
 export const DebtsSection = ({
   group,
@@ -12,9 +13,11 @@ export const DebtsSection = ({
   group: GroupOverview
   money: Money
 }): ReactElement | null => {
+  const [cash, setCash] = useState<{ member: GroupMember; owed: number } | null>(null)
   if (group.debts.length === 0) {
     return null
   }
+  const owedToMe = group.debts.some((debt) => findMember(group, debt.toId)?.isMe)
   const transfers = pluralize(group.debts.length, {
     one: 'перевод',
     few: 'перевода',
@@ -40,6 +43,8 @@ export const DebtsSection = ({
         return (
           <ListRow
             key={`${debt.fromId}-${debt.toId}`}
+            // Тебе должны — можно отметить возврат наличными
+            onClick={iOwe ? undefined : () => setCash({ member: other, owed: debt.amount })}
             leading={
               <Avatar initials={other.initials} tone={toneOf(group, other.id)} title={other.name} />
             }
@@ -57,6 +62,13 @@ export const DebtsSection = ({
           />
         )
       })}
+      {owedToMe && <p className="group-page__hint">Вернули наличными? Нажми на строку должника.</p>}
+      <CashDialog
+        groupId={group.id}
+        debtor={cash?.member ?? null}
+        owed={cash?.owed ?? 0}
+        onClose={() => setCash(null)}
+      />
     </ListGroup>
   )
 }
