@@ -11,6 +11,11 @@ private keys. The backend builds the transactions, finds them on-chain and verif
 This is a full-stack portfolio project: a React web app and a NestJS API in one monorepo. I designed and built it
 alone, from product idea and UI to the backend, on-chain integration and tests.
 
+Demo:
+https://github.com/user-attachments/assets/48787a46-3890-422c-886e-dfde788a18b4
+
+
+
 ## Highlights
 
 - **Passwordless sign-in with a wallet.** The user signs a challenge with Phantom or Solflare and gets a JWT. The access
